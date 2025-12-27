@@ -1,0 +1,53 @@
+node_modules
+# Keep environment variables out of version control
+.env
+
+/generated/prisma
+# Ignore generated client
+prisma/generated/client
+# Ignore migration files
+prisma/migrations
+# Ignore build output
+dist
+build
+# Ignore logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+# Ignore OS files
+.DS_Store
+Thumbs.db   
+# Ignore IDE files
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# Ignore test coverage
+coverage        
+.nyc_output
+# Ignore temporary files
+tmp
+temp    
+*.tmp
+*.temp
+# Ignore lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+# Ignore dotenv files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+# Ignore other files
+.cache
+.sass-cache
+# Ignore node_modules of sub-packages
+**/node_modules
+node_modules

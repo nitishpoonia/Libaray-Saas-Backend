@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model LibraryOwner {
+  id                  Int        @id @default(autoincrement())
+  name                String
+  email               String     @unique
+  phone               String
+  joined_date         DateTime
+  password_hash       String
+  subscription_status String?    // trial, active, expired
+  subscription_plan   String?    // monthly, 6months, yearly
+  subscription_end    DateTime?  // used to auto-expire
+  updated_at          DateTime   @updatedAt
+  created_at          DateTime   @default(now())
+
+  libraries Library[]
+}
+
+model Library {
+  id                 Int       @id @default(autoincrement())
+  library_owner_id   Int
+  name               String
+  address            String
+  trial_start        DateTime?
+  trial_end          DateTime?
+  subscription_start DateTime?
+  subscription_end   DateTime?
+  plan_type          String?
+  status             String // trial/active/expired
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  owner       LibraryOwner  @relation(fields: [library_owner_id], references: [id])
+  seats       Seats[]
+  students    Students[]
+  memberships Memberships[]
+  slot_types  SlotTypes[]
+  expenses    Expenses[]
+  payments    Payments[]
+
+  @@index([library_owner_id])
+}
+
+model Seats {
+  id          Int      @id @default(autoincrement())
+  library_id  Int
+  seat_number String
+  has_locker  Boolean
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  library     Library       @relation(fields: [library_id], references: [id])
+  memberships Memberships[]
+
+  @@unique([library_id, seat_number])
+}
+
+model Students {
+  id         Int      @id @default(autoincrement())
+  library_id Int
+  name       String
+  phone      String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  library     Library       @relation(fields: [library_id], references: [id])
+  memberships Memberships[]
+}
+
+model Memberships {
+  id           Int      @id @default(autoincrement())
+  library_id   Int
+  student_id   Int
+  seat_id      Int
+  slot_type_id Int
+  start_date   DateTime
+  end_date     DateTime
+  total_fee    Decimal
+  status       String // active/expired
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  library   Library    @relation(fields: [library_id], references: [id])
+  student   Students   @relation(fields: [student_id], references: [id])
+  seat      Seats      @relation(fields: [seat_id], references: [id])
+  slot_type SlotTypes  @relation(fields: [slot_type_id], references: [id])
+  payments  Payments[]
+}
+
+model SlotTypes {
+  id             Int      @id @default(autoincrement())
+  library_id     Int
+  name           String
+  duration_hours Int
+  price          Decimal
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  library     Library       @relation(fields: [library_id], references: [id])
+  memberships Memberships[]
+}
+
+model Expenses {
+  id           Int      @id @default(autoincrement())
+  library_id   Int
+  title        String
+  category     String
+  amount       Decimal
+  expense_date DateTime
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  library Library @relation(fields: [library_id], references: [id])
+}
+
+model Payments {
+  id            Int      @id @default(autoincrement())
+  library_id    Int
+  membership_id Int? // nullable for owner subscription payments
+  amount        Decimal
+  payment_date  DateTime
+  payment_mode  String
+  reference     String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  library    Library      @relation(fields: [library_id], references: [id])
+  membership Memberships? @relation(fields: [membership_id], references: [id])
+}

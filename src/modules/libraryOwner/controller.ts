@@ -1,0 +1,110 @@
+import { prisma } from "../../utils/prisma.js";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+import { Request, Response } from "express";
+
+dotenv.config();
+
+interface SignupBody {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+}
+export const createLibraryOwner = async (
+  req: Request<{}, {}, SignupBody>,
+  res: Response
+) => {
+  try {
+    const body = req.body ?? {};
+
+    const { name, email, phone, password } = body as SignupBody;
+
+    // 1. Validation
+    if (!name || name.length < 2) {
+      return res.status(400).json({ error: "Name is required (min 2 chars)" });
+    }
+
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ error: "Valid email is required" });
+    }
+
+    if (!phone || phone.length !== 10) {
+      return res
+        .status(400)
+        .json({ error: "Valid 10-digit phone is required" });
+    }
+
+    if (!password || password.length < 8) {
+      return res
+        .status(400)
+        .json({ error: "Password must be at least 8 characters" });
+    }
+
+    // 2. Check if email or phone already exists (either one)
+    const existing = await prisma.libraryOwner.findFirst({
+      where: {
+        OR: [{ email }, { phone }],
+      },
+    });
+
+    if (existing) {
+      return res
+        .status(409)
+        .json({ error: "Email or phone already registered" });
+    }
+
+    // 3. Hash password
+    const password_hash = await bcrypt.hash(password, 10);
+
+    // 4. Create owner
+    const owner = await prisma.libraryOwner.create({
+      data: {
+        name,
+        email,
+        phone,
+        password_hash,
+        joined_date: new Date(),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        joined_date: true,
+        created_at: true,
+      },
+    });
+
+    const libraryCount = await prisma.library.count({
+      where: { library_owner_id: owner.id },
+    });
+
+    const token = jwt.sign(
+      {
+        id: owner.id,
+        email: owner.email,
+      },
+      process.env.JWT_SECRET!,
+      { expiresIn: "7d" }
+    );
+
+    // 5. Send JSON response
+    return res.status(201).json({
+      message: "Signup successful",
+      token,
+      userId: owner.id,
+      isLibraryCreated: libraryCount > 0,
+      owner,
+    });
+  } catch (error: any) {
+    if (error.code === "P2002") {
+      return res
+        .status(409)
+        .json({ error: "Email or phone already registered" });
+    }
+    console.error("Signup error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
