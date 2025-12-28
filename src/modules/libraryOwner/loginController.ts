@@ -34,6 +34,10 @@ export const loginLibraryOwner = async (
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
+    const libraryCount = await prisma.library.count({
+      where: { library_owner_id: owner.id },
+    });
+
     // create JWT
     const token = jwt.sign(
       {
@@ -53,6 +57,8 @@ export const loginLibraryOwner = async (
         email: owner.email,
         phone: owner.phone,
       },
+      isLibraryCreated: libraryCount > 0,
+      userId: owner.id,
     });
   } catch (error) {
     console.error("Login error:", error);
