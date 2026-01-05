@@ -1,14 +1,18 @@
 import express from "express";
-import { auth } from "../../middleware/auth.js";
+import { authMiddleware } from "../../middleware/auth.js";
 import {
   createLibrary,
   getLibraries,
   getLibraryOverview,
 } from "./controller.js";
+import { subscriptionCheck } from "../../middleware/subscriptionCheck.js";
 
 const router = express.Router();
+router.use(authMiddleware);
+router.get("/my-libraries", getLibraries);
+router.get("/:id/overview", getLibraryOverview);
 
-router.post("/", auth, createLibrary);
-router.get("/my-libraries", auth, getLibraries);
-router.get("/:id/overview", auth, getLibraryOverview);
+router.use(subscriptionCheck);
+router.post("/", createLibrary);
+
 export default router;

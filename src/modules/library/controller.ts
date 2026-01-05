@@ -8,30 +8,6 @@ interface CreateLibraryBody {
   seats?: number;
 }
 
-function getAllowedLibrariesCount(owner: {
-  subscription_status?: string | null;
-  plan_type?: string | null;
-  subscription_end?: Date | string | null;
-}) {
-  const status = (owner.subscription_status || "trial").toLowerCase();
-
-  // If subscription_end exists and is in the past, treat as expired
-  if (owner.subscription_end) {
-    const end = new Date(owner.subscription_end);
-    if (!isNaN(end.getTime()) && end.getTime() < Date.now()) {
-      return { allowed: 0, status: "expired" };
-    }
-  }
-
-  if (status === "trial") return { allowed: 1, status: "trial" };
-  if (status === "active") {
-    // All paid plans get up to 3 libraries (business rule)
-    return { allowed: 3, status: "active" };
-  }
-  // expired or unknown -> no new libraries
-  return { allowed: 0, status: "expired" };
-}
-
 export const createLibrary = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -49,42 +25,19 @@ export const createLibrary = async (req: Request, res: Response) => {
       where: { id: Number(user.id) },
       select: {
         id: true,
-        subscription_status: true,
-        subscription_plan: true,
-        subscription_end: true,
       },
     });
 
     if (!owner) return res.status(404).json({ error: "Owner not found" });
-
-    const { allowed, status } = getAllowedLibrariesCount(owner);
 
     // count existing libraries for owner
     const currentCount = await prisma.library.count({
       where: { library_owner_id: owner.id },
     });
 
-    if (currentCount >= allowed) {
-      if (status === "trial") {
-        return res.status(403).json({
-          error:
-            "Trial limit reached. Trial owners can create only 1 library. Upgrade to a paid plan to add more.",
-          limit: allowed,
-          current: currentCount,
-        });
-      }
-      if (status === "expired") {
-        return res.status(403).json({
-          error:
-            "Subscription expired. You cannot create new libraries. Renew your subscription to continue.",
-          limit: allowed,
-          current: currentCount,
-        });
-      }
+    if (currentCount >= 1) {
       return res.status(403).json({
-        error: "Library creation limit reached for your plan.",
-        limit: allowed,
-        current: currentCount,
+        error: "Library limit reached. You can only create one library",
       });
     }
 
@@ -94,9 +47,9 @@ export const createLibrary = async (req: Request, res: Response) => {
         name,
         address,
         library_owner_id: owner.id,
-        trial_start: new Date(),
-        trial_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        status: status === "trial" ? "trial" : "active",
+        subscription_start: new Date(),
+        subscription_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        status: "trial",
       },
     });
 

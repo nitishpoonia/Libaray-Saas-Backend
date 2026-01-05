@@ -3,13 +3,13 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import { Request, Response } from "express";
+import { validateIdentifier } from "../../helpers/basicHelper.js";
 
 dotenv.config();
 
 interface SignupBody {
   name: string;
-  email: string;
-  phone: string;
+  identifier: string;
   password: string;
 }
 export const createLibraryOwner = async (
@@ -19,21 +19,24 @@ export const createLibraryOwner = async (
   try {
     const body = req.body ?? {};
 
-    const { name, email, phone, password } = body as SignupBody;
+    const { name, identifier, password } = body as SignupBody;
 
     // 1. Validation
     if (!name || name.length < 2) {
       return res.status(400).json({ error: "Name is required (min 2 chars)" });
     }
 
-    if (!email || !email.includes("@")) {
-      return res.status(400).json({ error: "Valid email is required" });
-    }
+    let user;
+    const kind = validateIdentifier(identifier);
 
-    if (!phone || phone.length !== 10) {
-      return res
-        .status(400)
-        .json({ error: "Valid 10-digit phone is required" });
+    if (kind === "email") {
+      user = await prisma.libraryOwner.findUnique({
+        where: { email: identifier },
+      });
+    } else {
+      user = await prisma.libraryOwner.findUnique({
+        where: { phone: identifier },
+      });
     }
 
     if (!password || password.length < 8) {
@@ -42,14 +45,7 @@ export const createLibraryOwner = async (
         .json({ error: "Password must be at least 8 characters" });
     }
 
-    // 2. Check if email or phone already exists (either one)
-    const existing = await prisma.libraryOwner.findFirst({
-      where: {
-        OR: [{ email }, { phone }],
-      },
-    });
-
-    if (existing) {
+    if (user) {
       return res
         .status(409)
         .json({ error: "Email or phone already registered" });
@@ -62,8 +58,8 @@ export const createLibraryOwner = async (
     const owner = await prisma.libraryOwner.create({
       data: {
         name,
-        email,
-        phone,
+        email: kind === "email" ? identifier : null,
+        phone: kind === "phone" ? identifier : null,
         password_hash,
         joined_date: new Date(),
       },
@@ -84,7 +80,6 @@ export const createLibraryOwner = async (
     const token = jwt.sign(
       {
         id: owner.id,
-        email: owner.email,
       },
       process.env.JWT_SECRET!,
       { expiresIn: "7d" }

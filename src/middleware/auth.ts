@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-export const auth = (req: Request, res: Response, next: NextFunction) => {
+export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
