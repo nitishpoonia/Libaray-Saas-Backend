@@ -20,3 +20,10 @@ export function formatTime(date: Date) {
     date.getMinutes()
   ).padStart(2, "0")}`;
 }
+
+export function parseTime(time: string) {
+  const [hour, minute] = time.split(":").map(Number);
+  const base = new Date();
+  base.setHours(hour, minute, 0, 0);
+  return base;
+}
