@@ -35,14 +35,15 @@ export const createLibrary = async (req: Request, res: Response) => {
       where: { library_owner_id: owner.id },
     });
 
-    if (currentCount >= 1) {
+    if (currentCount > 1) {
       return res.status(403).json({
         error: "Library limit reached. You can only create one library",
       });
     }
 
     // allowed -> proceed with create
-    const library = await prisma.library.create({
+    const library = await prisma.library.update({
+      where: { library_owner_id: owner.id },
       data: {
         name,
         address,

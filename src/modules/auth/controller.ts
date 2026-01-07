@@ -62,6 +62,13 @@ export const createLibraryOwner = async (
         phone: kind === "phone" ? identifier : null,
         password_hash,
         joined_date: new Date(),
+        library: {
+          create: {
+            status: "trial",
+            subscription_start: new Date(),
+            subscription_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        },
       },
       select: {
         id: true,
@@ -74,7 +81,10 @@ export const createLibraryOwner = async (
     });
 
     const libraryCount = await prisma.library.count({
-      where: { library_owner_id: owner.id },
+      where: {
+        library_owner_id: owner.id,
+        AND: [{ name: { not: null } }, { name: { not: "" } }],
+      },
     });
 
     const token = jwt.sign(

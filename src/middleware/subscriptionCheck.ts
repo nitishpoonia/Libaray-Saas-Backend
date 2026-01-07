@@ -9,6 +9,7 @@ export const subscriptionCheck = async (
   try {
     const user = (req as any).user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
+    console.log("User id", user);
 
     const owner = await prisma.libraryOwner.findUnique({
       where: { id: user?.id },
@@ -22,7 +23,7 @@ export const subscriptionCheck = async (
         },
       },
     });
-    console.log(owner);
+    console.log("Owner details", owner);
 
     const now = new Date();
     const isActive = owner && owner.library?.status === "active";

@@ -22,8 +22,8 @@ model LibraryOwner {
 model Library {
   id                 Int       @id @default(autoincrement())
   library_owner_id   Int        @unique
-  name               String
-  address            String
+  name               String?
+  address            String?
   subscription_start DateTime?
   subscription_end   DateTime?
   plan_type          String?

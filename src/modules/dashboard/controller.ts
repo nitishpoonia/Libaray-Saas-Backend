@@ -1,12 +1,14 @@
 import { Request, Response } from "express";
 import { prisma } from "../../utils/prisma.js";
 
-export const getLibraryOverview = async (req: Request, res: Response) => {
+export const getDashboard = async (req: Request, res: Response) => {
+  console.log("**********************************");
+
   try {
     const user = (req as any).user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
-    const libraryId = Number(req.params.id);
+    const libraryId = Number(req.params.libraryId);
     if (Number.isNaN(libraryId)) {
       return res.status(400).json({ error: "Library id must be a number" });
     }
@@ -35,6 +37,7 @@ export const getLibraryOverview = async (req: Request, res: Response) => {
       },
     });
     const totalExpenses = expensesSum._sum.amount ?? 0;
+    console.log("Total Expense", expensesSum);
 
     const revenueSum = await prisma.payments.aggregate({
       where: {
@@ -51,12 +54,15 @@ export const getLibraryOverview = async (req: Request, res: Response) => {
       select: {
         status: true,
         subscription_end: true,
+        name: true,
       },
     });
 
     if (!library) {
       return res.status(404).json({ error: "Library not found" });
     }
+
+    const libaryName = library.name;
 
     const daysRemaining = library?.subscription_end
       ? Math.max(
@@ -76,6 +82,7 @@ export const getLibraryOverview = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
+      libraryName: libaryName,
       dashboard: {
         seats: {
           total: totalSeats,

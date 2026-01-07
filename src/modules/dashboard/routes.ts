@@ -1,8 +1,8 @@
 import express from "express";
 import { authMiddleware } from "../../middleware/auth";
-import { getLibraryOverview } from "./controller";
+import { getDashboard } from "./controller";
 const router = express.Router();
 
 router.use(authMiddleware);
-router.get("/:libraryId/overview", getLibraryOverview);
+router.get("/:libraryId/dashboard-overview", getDashboard);
 export default router;
