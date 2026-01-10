@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "tsx watch src/server.ts"
+    "start": "tsx watch src/server.ts",
+    "migrate:local": "dotenv -e .env.local prisma migrate dev",
+    "migrate:prod": "dotenv -e .env.production prisma migrate deploy"
   },
   "keywords": [],
   "type": "module",
@@ -25,6 +27,7 @@
     "@types/node": "^24.10.1",
     "@types/pg": "^8.15.6",
     "dotenv": "^17.2.3",
+    "dotenv-cli": "^11.0.0",
     "prisma": "^7.0.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
