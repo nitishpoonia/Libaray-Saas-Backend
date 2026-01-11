@@ -15,7 +15,7 @@ export function validateIdentifier(value: string): "email" | "phone" {
   throw new Error("Identifier must be a valid email or phone number");
 }
 
-export function formatTime(date: Date) {
+export function formatTimeSingle(date: Date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(
     date.getMinutes()
   ).padStart(2, "0")}`;

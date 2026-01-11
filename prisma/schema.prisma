@@ -8,20 +8,20 @@ datasource db {
 }
 
 model LibraryOwner {
-  id                  Int       @id @default(autoincrement())
-  name                String
-  email               String?   @unique
-  phone               String?   @unique
-  joined_date         DateTime
-  password_hash       String
-  updated_at          DateTime  @updatedAt
-  created_at          DateTime  @default(now())
-  library Library?
+  id            Int      @id @default(autoincrement())
+  name          String
+  email         String?  @unique
+  phone         String?  @unique
+  joined_date   DateTime
+  password_hash String
+  updated_at    DateTime @updatedAt
+  created_at    DateTime @default(now())
+  library       Library?
 }
 
 model Library {
   id                 Int       @id @default(autoincrement())
-  library_owner_id   Int        @unique
+  library_owner_id   Int       @unique
   name               String?
   address            String?
   subscription_start DateTime?
@@ -69,22 +69,33 @@ model Students {
 }
 
 model Memberships {
-  id               Int        @id @default(autoincrement())
-  library_id       Int
-  student_id       Int
-  seat_id          Int
-  start_date       DateTime
-  end_date         DateTime
-  total_fee        Decimal
-  status           String // active/expired
-  created_at       DateTime   @default(now())
-  updated_at       DateTime   @updatedAt
-  daily_start_time DateTime   @db.Time
-  daily_end_time   DateTime   @db.Time
-  library          Library    @relation(fields: [library_id], references: [id])
-  student          Students   @relation(fields: [student_id], references: [id])
-  seat             Seats      @relation(fields: [seat_id], references: [id])
-  payments         Payments[]
+  id Int @id @default(autoincrement())
+
+  start_hour       Int
+  start_minute     Int
+  end_hour         Int
+  end_minute       Int
+  crosses_midnight Boolean @default(false)
+
+  start_date DateTime
+  end_date   DateTime
+  status     String
+  total_fee  Decimal
+
+  student_id Int
+  seat_id    Int
+  library_id Int
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  student  Students   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  seat     Seats      @relation(fields: [seat_id], references: [id])
+  library  Library    @relation(fields: [library_id], references: [id])
+  payments Payments[]
+
+  @@index([seat_id, status])
+  @@index([library_id])
 }
 
 model Expenses {

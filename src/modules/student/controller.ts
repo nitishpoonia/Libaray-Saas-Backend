@@ -1,7 +1,13 @@
 import { Request, Response } from "express";
 import { prisma } from "../../utils/prisma";
 import { Prisma } from "../../../generated/prisma";
-import { formatTime } from "../../helpers/basicHelper";
+import {
+  doTimeSlotsOverlap,
+  formatTime,
+  isValidTime,
+  parseTimingString,
+} from "../../utils/timeUtils";
+import { formatTimeSingle } from "../../helpers/basicHelper";
 
 interface CreateStudentBody {
   name: string;
@@ -21,6 +27,7 @@ export const createStudent = async (req: Request, res: Response) => {
     if (!req.body) {
       return res.status(400).json({ error: "Request body is required" });
     }
+
     const {
       name,
       phone,
@@ -32,151 +39,114 @@ export const createStudent = async (req: Request, res: Response) => {
       library_id,
     } = req.body as CreateStudentBody;
 
-    if (!name) {
+    // Validate required fields
+    if (!name) return res.status(400).json({ error: "Name is required" });
+    if (!phone) return res.status(400).json({ error: "Phone is required" });
+    if (!seat_number)
+      return res.status(400).json({ error: "Seat Number is required" });
+    if (!booked_for)
+      return res.status(400).json({ error: "Booked for duration is required" });
+    if (!timing) return res.status(400).json({ error: "Timing is required" });
+    if (!payment_method)
+      return res.status(400).json({ error: "Payment Method is required" });
+    if (!amount) return res.status(400).json({ error: "Amount is required" });
+    if (!library_id)
+      return res.status(400).json({ error: "Library Id is required" });
+
+    // Parse timing
+    const timeSlot = parseTimingString(timing);
+
+    // Validate time format
+    if (
+      !isValidTime(timeSlot.start_hour, timeSlot.start_minute) ||
+      !isValidTime(timeSlot.end_hour, timeSlot.end_minute)
+    ) {
       return res.status(400).json({
-        error: "Name is required",
+        error: "Invalid time format. Hours must be 0-23, minutes 0-59",
       });
     }
 
-    if (!phone) {
-      return res.status(400).json({
-        error: "Phone is required",
-      });
-    }
-    if (!seat_number) {
-      return res.status(400).json({
-        error: "Seat Number is required",
-      });
-    }
-    if (!booked_for) {
-      return res.status(400).json({
-        error: "Booker for duration is required",
-      });
-    }
-    if (!timing) {
-      return res.status(400).json({
-        error: "Timing is required",
-      });
-    }
-    if (!payment_method) {
-      return res.status(400).json({
-        error: "Payment Method is required",
-      });
-    }
-
-    if (!amount) {
-      return res.status(400).json({
-        error: "Amount is required",
-      });
-    }
-    if (!library_id) {
-      return res.status(400).json({
-        error: "Library Id is required",
-      });
-    }
-
-    const [start, end] = timing.split(" - ");
-
-    const today = new Date();
-
-    const daily_start_time = new Date(today);
-    const daily_end_time = new Date(today);
-
-    const [startHour, startMin] = start.split(":").map(Number);
-    const [endHour, endMin] = end.split(":").map(Number);
-
-    daily_start_time.setHours(startHour, startMin, 0, 0);
-    daily_end_time.setHours(endHour, endMin, 0, 0);
-
-    /* ----------------------------------
-       2. Calculate membership end date (30 days)
-    ---------------------------------- */
+    // Calculate membership dates
     const start_date = new Date();
     const end_date = new Date(start_date);
     end_date.setDate(end_date.getDate() + booked_for);
 
+    // Verify library exists
     const library = await prisma.library.findUnique({
       where: { id: library_id },
     });
-
     if (!library) {
       return res.status(400).json({ error: "Library not found" });
     }
 
+    // Find seat
     const seat = await prisma.seats.findFirst({
       where: {
         library_id,
         seat_number: String(seat_number),
       },
-      select: {
-        id: true,
-      },
+      select: { id: true },
     });
-
-    const overlappingMembership = await prisma.memberships.findFirst({
-      where: {
-        seat_id: seat?.id,
-        status: "active",
-
-        AND: [
-          {
-            daily_start_time: {
-              lt: daily_end_time,
-            },
-          },
-          {
-            daily_end_time: {
-              gt: daily_start_time,
-            },
-          },
-        ],
-      },
-    });
-
     if (!seat) {
       return res.status(400).json({ error: "Seat not found" });
     }
 
-    if (overlappingMembership) {
+    // Get all active memberships for this seat
+    const existingMemberships = await prisma.memberships.findMany({
+      where: {
+        seat_id: seat.id,
+        status: "active",
+      },
+      select: {
+        start_hour: true,
+        start_minute: true,
+        end_hour: true,
+        end_minute: true,
+        crosses_midnight: true,
+      },
+    });
+
+    // Check for overlaps using the utility function
+    const hasOverlap = existingMemberships.some((existing) =>
+      doTimeSlotsOverlap(timeSlot, existing)
+    );
+
+    if (hasOverlap) {
       return res.status(409).json({
         error: "Seat already booked for this time slot",
       });
     }
 
+    // Create student with membership
     const student = await prisma.students.create({
       data: {
         name,
         phone,
-
         library: {
           connect: { id: library_id },
         },
-
         memberships: {
           create: {
             start_date,
             end_date,
             status: "active",
-
-            daily_start_time,
-            daily_end_time,
-
+            start_hour: timeSlot.start_hour,
+            start_minute: timeSlot.start_minute,
+            end_hour: timeSlot.end_hour,
+            end_minute: timeSlot.end_minute,
+            crosses_midnight: timeSlot.crosses_midnight,
             total_fee: new Prisma.Decimal(amount),
-
             library: {
               connect: { id: library_id },
             },
-
             seat: {
               connect: { id: seat.id },
             },
-
             payments: {
               create: {
                 amount: new Prisma.Decimal(amount),
                 payment_mode: payment_method,
                 payment_date: new Date(),
-
                 library: {
                   connect: { id: library_id },
                 },
@@ -194,21 +164,25 @@ export const createStudent = async (req: Request, res: Response) => {
         },
       },
     });
+
+    // Format response
     const formattedStudent = {
       ...student,
       memberships: student.memberships.map((m) => ({
         ...m,
-        daily_start_time: formatTime(m.daily_start_time),
-        daily_end_time: formatTime(m.daily_end_time),
+        timing: `${formatTime(m.start_hour, m.start_minute)} - ${formatTime(
+          m.end_hour,
+          m.end_minute
+        )}`,
       })),
     };
+
     return res.status(201).json({
       success: true,
-      formattedStudent,
+      student: formattedStudent,
     });
   } catch (error) {
     console.log("Error creating student", error);
-
     return res.status(500).json({
       error: "Error creating student",
     });
@@ -335,9 +309,10 @@ export const getAllStudents = async (req: Request, res: Response) => {
 
           seatNumber: membership?.seat?.seat_number ?? null,
           timing: membership
-            ? `${formatTime(membership.daily_start_time)} - ${formatTime(
-                membership.daily_end_time
-              )}`
+            ? `${formatTime(
+                membership.start_hour,
+                membership.start_minute
+              )} - ${formatTime(membership.end_hour, membership.end_minute)}`
             : null,
 
           membershipStatus: membership?.status ?? "inactive",
