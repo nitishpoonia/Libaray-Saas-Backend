@@ -7,7 +7,6 @@ import {
   isValidTime,
   parseTimingString,
 } from "../../utils/timeUtils";
-import { formatTimeSingle } from "../../helpers/basicHelper";
 
 interface CreateStudentBody {
   name: string;
@@ -105,17 +104,6 @@ export const createStudent = async (req: Request, res: Response) => {
         crosses_midnight: true,
       },
     });
-
-    // Check for overlaps using the utility function
-    const hasOverlap = existingMemberships.some((existing) =>
-      doTimeSlotsOverlap(timeSlot, existing)
-    );
-
-    if (hasOverlap) {
-      return res.status(409).json({
-        error: "Seat already booked for this time slot",
-      });
-    }
 
     // Create student with membership
     const student = await prisma.students.create({

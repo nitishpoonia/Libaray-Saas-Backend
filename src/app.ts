@@ -5,13 +5,15 @@ import studentRoutes from "./modules/student/routes.js";
 import seatRoutes from "./modules/seats/routes.js";
 import expenseRoutes from "./modules/expenses/routes.js";
 import dashboardRoutes from "./modules/dashboard/routes.js";
+import profileRoutes from "./modules/userProfile/route.js";
 const app = express();
 
 app.use(express.json());
 app.use("/owners", libraryOwnerRoutes);
 app.use("/libraries", libraryRoutes);
 app.use("/libraries", studentRoutes);
-app.use("/libraries", seatRoutes);
+app.use("/seats", seatRoutes);
 app.use("/libraries", expenseRoutes);
 app.use("/libraries", dashboardRoutes);
+app.use("/profile", profileRoutes);
 export default app;

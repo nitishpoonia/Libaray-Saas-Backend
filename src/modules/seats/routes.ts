@@ -6,6 +6,6 @@ import { getAllAvailableSeats } from "./controller";
 const router = express.Router();
 router.use(authMiddleware);
 
-router.get("/:libraryId/available-seats", getAllAvailableSeats);
+router.post("/:libraryId/available-seats", getAllAvailableSeats);
 
 export default router;
