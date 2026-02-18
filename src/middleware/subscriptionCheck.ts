@@ -4,12 +4,11 @@ import { prisma } from "../utils/prisma";
 export const subscriptionCheck = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const user = (req as any).user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
-    console.log("User id", user);
 
     const owner = await prisma.libraryOwner.findUnique({
       where: { id: user?.id },
@@ -23,7 +22,6 @@ export const subscriptionCheck = async (
         },
       },
     });
-    console.log("Owner details", owner);
 
     const now = new Date();
     const isActive = owner && owner.library?.status === "active";
@@ -35,6 +33,14 @@ export const subscriptionCheck = async (
         .json({ error: "Active or trial subscription required" });
     }
     (req as any).ownerSubscription = owner;
+
+    const isExpired = owner && owner.library?.subscription_end < new Date();
+
+    if (isExpired) {
+      return res.status(403).json({
+        error: "You need an active subscription to perform this operation",
+      });
+    }
     next();
   } catch (error) {
     res.status(500).json({ error: "Subscription check failed" });

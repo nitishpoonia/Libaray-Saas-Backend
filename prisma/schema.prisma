@@ -8,15 +8,17 @@ datasource db {
 }
 
 model LibraryOwner {
-  id            Int      @id @default(autoincrement())
-  name          String
-  email         String?  @unique
-  phone         String?  @unique
-  joined_date   DateTime
-  password_hash String
-  updated_at    DateTime @updatedAt
-  created_at    DateTime @default(now())
-  library       Library?
+  id                    Int      @id @default(autoincrement())
+  name                  String
+  email                 String?  @unique
+  phone                 String?  @unique
+  joined_date           DateTime
+  password_hash         String
+  expo_push_token       String?
+  notifications_enabled Boolean  @default(true)
+  updated_at            DateTime @updatedAt
+  created_at            DateTime @default(now())
+  library               Library?
 }
 
 model Library {
@@ -31,12 +33,13 @@ model Library {
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
 
-  owner       LibraryOwner  @relation(fields: [library_owner_id], references: [id])
-  seats       Seats[]
-  students    Students[]
-  memberships Memberships[]
-  expenses    Expenses[]
-  payments    Payments[]
+  owner            LibraryOwner      @relation(fields: [library_owner_id], references: [id])
+  seats            Seats[]
+  students         Students[]
+  memberships      Memberships[]
+  expenses         Expenses[]
+  payments         Payments[]
+  notificationLogs NotificationLog[]
 
   @@index([library_owner_id])
 }
@@ -89,10 +92,11 @@ model Memberships {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  student  Students   @relation(fields: [student_id], references: [id], onDelete: Cascade)
-  seat     Seats      @relation(fields: [seat_id], references: [id])
-  library  Library    @relation(fields: [library_id], references: [id])
-  payments Payments[]
+  student          Students          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  seat             Seats             @relation(fields: [seat_id], references: [id])
+  library          Library           @relation(fields: [library_id], references: [id])
+  payments         Payments[]
+  notificationLogs NotificationLog[]
 
   @@index([seat_id, status])
   @@index([library_id])
@@ -124,4 +128,18 @@ model Payments {
 
   library    Library      @relation(fields: [library_id], references: [id])
   membership Memberships? @relation(fields: [membership_id], references: [id])
+}
+
+model NotificationLog {
+  id                Int      @id @default(autoincrement())
+  library_id        Int
+  membership_id     Int
+  sent_at           DateTime @default(now())
+  notification_type String 
+
+  library    Library     @relation(fields: [library_id], references: [id])
+  membership Memberships @relation(fields: [membership_id], references: [id])
+
+  @@unique([membership_id, notification_type, sent_at])
+  @@index([library_id, sent_at])
 }

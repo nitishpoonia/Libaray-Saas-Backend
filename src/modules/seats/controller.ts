@@ -1,6 +1,6 @@
 import { Response, Request } from "express";
 import { prisma } from "../../utils/prisma";
-import { convertTimeToMinutes, parseTime } from "../../helpers/basicHelper";
+import { parseTime } from "../../helpers/basicHelper";
 import dayjs from "dayjs";
 import { hasTimeOverlap } from "../../utils/timeUtils";
 

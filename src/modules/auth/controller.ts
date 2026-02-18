@@ -14,7 +14,7 @@ interface SignupBody {
 }
 export const createLibraryOwner = async (
   req: Request<{}, {}, SignupBody>,
-  res: Response
+  res: Response,
 ) => {
   try {
     const body = req.body ?? {};
@@ -38,7 +38,9 @@ export const createLibraryOwner = async (
         where: { phone: identifier },
       });
     }
-
+    if (!kind) {
+      return res.status(400).json({ error: "Invalid email or phone format" });
+    }
     if (!password || password.length < 8) {
       return res
         .status(400)
@@ -92,7 +94,7 @@ export const createLibraryOwner = async (
         id: owner.id,
       },
       process.env.JWT_SECRET!,
-      { expiresIn: "7d" }
+      { expiresIn: "7d" },
     );
 
     // 5. Send JSON response

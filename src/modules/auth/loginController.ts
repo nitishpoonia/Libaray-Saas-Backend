@@ -12,11 +12,12 @@ interface LoginBody {
 
 export const loginLibraryOwner = async (
   req: Request<{}, {}, LoginBody>,
-  res: Response
+  res: Response,
 ) => {
   try {
     const body = req.body ?? {};
     const { identifier, password } = body;
+    console.log("boyd", body);
 
     if (!identifier || !password) {
       return res
@@ -36,7 +37,6 @@ export const loginLibraryOwner = async (
         where: { phone: identifier },
       });
     }
-   
 
     if (!user) {
       return res.status(400).json({ error: "Invalid email/phone or password" });
@@ -58,7 +58,7 @@ export const loginLibraryOwner = async (
         email: user.email,
       },
       process.env.JWT_SECRET!,
-      { expiresIn: "7d" }
+      { expiresIn: "7d" },
     );
 
     return res.json({
