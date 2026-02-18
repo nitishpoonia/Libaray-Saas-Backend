@@ -114,6 +114,7 @@ export const notifyLibraryOwnersForExpiringMemberships = async (
     }
 
     if (!libraryMap.size) {
+      console.log("No user for notification");
       return res.status(200).json({
         message: "No owners eligible for notification",
       });
