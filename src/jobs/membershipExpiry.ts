@@ -3,7 +3,7 @@ import { notifyLibraryOwnersForExpiringMemberships } from "../modules/notificati
 
 export const startMembershipExpiryJob = () => {
   cron.schedule(
-    "41 15 * * *",
+    "35 19 * * *",
     async () => {
       console.log("Running membership expiry cron...");
       await notifyLibraryOwnersForExpiringMemberships();
