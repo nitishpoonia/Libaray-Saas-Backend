@@ -1,7 +1,7 @@
 node_modules
 # Keep environment variables out of version control
 .env
-firebase-adminsdk-*.json
+library-saas-f2c71-firebase-adminsdk-fbsvc-58ad6778fd.json
 
 /generated/prisma
 # Ignore generated client
