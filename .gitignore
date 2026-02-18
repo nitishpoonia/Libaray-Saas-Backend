@@ -1,6 +1,7 @@
 node_modules
 # Keep environment variables out of version control
 .env
+.env.production
 library-saas-f2c71-firebase-adminsdk-fbsvc-58ad6778fd.json
 
 /generated/prisma
