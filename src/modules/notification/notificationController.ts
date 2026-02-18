@@ -43,126 +43,122 @@ export const registerNotificationToken = async (
   }
 };
 
+// ✅ Core logic — no req/res, called by cron job
+export const processExpiringMembershipNotifications = async () => {
+  const now = dayjs().utc().toDate();
+  const sevenDaysLater = dayjs().utc().add(7, "day").toDate();
+
+  const memberships = await prisma.memberships.findMany({
+    where: {
+      status: "active",
+      end_date: {
+        gte: now,
+        lte: sevenDaysLater,
+      },
+      notificationLogs: {
+        none: {
+          notification_type: "expiry_within_7_days",
+        },
+      },
+    },
+    include: {
+      library: {
+        include: {
+          owner: true,
+        },
+      },
+    },
+  });
+
+  console.log("Memberships found:", memberships.length);
+
+  if (memberships.length === 0) {
+    console.log("No memberships expiring in next 7 days");
+    return { successCount: 0, failureCount: 0 };
+  }
+
+  const libraryMap = new Map();
+
+  for (const membership of memberships) {
+    const libraryId = membership.library_id;
+    const owner = membership.library.owner;
+
+    if (!owner?.expo_push_token || !owner.notifications_enabled) continue;
+
+    if (!libraryMap.has(libraryId)) {
+      libraryMap.set(libraryId, {
+        token: owner.expo_push_token,
+        count: 0,
+        renewalAmount: 0,
+        membershipIds: [],
+      });
+    }
+
+    const data = libraryMap.get(libraryId)!;
+    data.count += 1;
+    data.renewalAmount += Number(membership.total_fee);
+    data.membershipIds.push(membership.id);
+  }
+
+  if (!libraryMap.size) {
+    console.log("No owners eligible for notification");
+    return { successCount: 0, failureCount: 0 };
+  }
+
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (const [libraryId, data] of libraryMap) {
+    const message = {
+      notification: {
+        title: "Upcoming Membership Renewals",
+        body: `${data.count} memberships expiring in next 7 days. Expected renewal revenue: ₹${data.renewalAmount}`,
+      },
+      token: data.token,
+      android: {
+        priority: "high" as const,
+        notification: {
+          sound: "default",
+        },
+      },
+    };
+
+    try {
+      await admin.messaging().send(message);
+      successCount++;
+
+      for (const membershipId of data.membershipIds) {
+        await prisma.notificationLog.create({
+          data: {
+            library_id: libraryId,
+            membership_id: membershipId,
+            notification_type: "expiry_within_7_days",
+          },
+        });
+      }
+    } catch (error) {
+      console.error("FCM Error:", error);
+      failureCount++;
+    }
+  }
+
+  console.log(
+    `Notifications processed — Success: ${successCount}, Failed: ${failureCount}`,
+  );
+  return { successCount, failureCount };
+};
+
+// ✅ Express route handler — calls core logic, sends HTTP response
 export const notifyLibraryOwnersForExpiringMemberships = async (
   req: Request,
   res: Response,
 ) => {
   try {
-    const now = dayjs().utc().toDate();
-    const sevenDaysLater = dayjs().utc().add(7, "day").toDate();
-
-    const memberships = await prisma.memberships.findMany({
-      where: {
-        status: "active",
-        end_date: {
-          gte: now,
-          lte: sevenDaysLater,
-        },
-
-        notificationLogs: {
-          none: {
-            notification_type: "expiry_within_7_days",
-          },
-        },
-      },
-      include: {
-        library: {
-          include: {
-            owner: true,
-          },
-        },
-      },
-    });
-
-    if (!memberships.length) {
-      return res.status(200).json({
-        message: "No memberships expiring in next 7 days",
-      });
-    }
-
-    // 2️⃣ Group by library
-    const libraryMap = new Map<
-      number,
-      {
-        token: string;
-        count: number;
-        renewalAmount: number;
-        membershipIds: number[];
-      }
-    >();
-
-    for (const membership of memberships) {
-      const libraryId = membership.library_id;
-      const owner = membership.library.owner;
-
-      if (!owner?.expo_push_token || !owner.notifications_enabled) continue;
-
-      if (!libraryMap.has(libraryId)) {
-        libraryMap.set(libraryId, {
-          token: owner.expo_push_token,
-          count: 0,
-          renewalAmount: 0,
-          membershipIds: [],
-        });
-      }
-
-      const data = libraryMap.get(libraryId)!;
-
-      data.count += 1;
-      data.renewalAmount += Number(membership.total_fee);
-      data.membershipIds.push(membership.id);
-    }
-
-    if (!libraryMap.size) {
-      console.log("No user for notification");
-      return res.status(200).json({
-        message: "No owners eligible for notification",
-      });
-    }
-
-    let successCount = 0;
-    let failureCount = 0;
-
-    // 3️⃣ Send notification per library owner
-    for (const [libraryId, data] of libraryMap) {
-      const message = {
-        notification: {
-          title: "Upcoming Membership Renewals",
-          body: `${data.count} memberships expiring in next 7 days. Expected renewal revenue: ₹${data.renewalAmount}`,
-        },
-        token: data.token,
-        android: {
-          priority: "high",
-          notification: {
-            sound: "default",
-          },
-        },
-      };
-
-      try {
-        await admin.messaging().send(message);
-        successCount++;
-
-        // 4️⃣ Log notifications
-        for (const membershipId of data.membershipIds) {
-          await prisma.notificationLog.create({
-            data: {
-              library_id: libraryId,
-              membership_id: membershipId,
-              notification_type: "expiry_within_7_days",
-            },
-          });
-        }
-      } catch (error) {
-        console.error("FCM Error:", error);
-        failureCount++;
-      }
-    }
-
+    const result = await processExpiringMembershipNotifications();
     return res.status(200).json({
       message: "Notifications processed",
-      success: successCount,
-      failed: failureCount,
+      success: result.successCount,
+      failed: result.failureCount,
     });
   } catch (error) {
     console.error("Notification job error:", error);

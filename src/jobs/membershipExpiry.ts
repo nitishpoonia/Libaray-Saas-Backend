@@ -1,12 +1,17 @@
 import cron from "node-cron";
-import { notifyLibraryOwnersForExpiringMemberships } from "../modules/notification/notificationController";
+import { processExpiringMembershipNotifications } from "../modules/notification/notificationController";
 
 export const startMembershipExpiryJob = () => {
   cron.schedule(
-    "0 20 * * *",
+    "27 20 * * *",
     async () => {
       console.log("Running membership expiry cron...");
-      await notifyLibraryOwnersForExpiringMemberships();
+      try {
+        const result = await processExpiringMembershipNotifications();
+        console.log("Cron job completed:", result);
+      } catch (error) {
+        console.error("Cron job failed:", error);
+      }
     },
     {
       timezone: "Asia/Kolkata",
