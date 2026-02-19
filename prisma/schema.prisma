@@ -113,6 +113,7 @@ model Expenses {
   updated_at   DateTime @updatedAt
 
   library Library @relation(fields: [library_id], references: [id])
+  @@index([library_id, expense_date])
 }
 
 model Payments {

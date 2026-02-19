@@ -85,24 +85,55 @@ export const listAllExpenses = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Invalid library id" });
     }
 
-    const expenses = await prisma.expenses.findMany({
-      where: {
-        library_id: libraryId,
-      },
-      orderBy: {
-        expense_date: "desc",
-      },
-      select: {
-        title: true,
-        expense_date: true,
-        category: true,
-        amount: true,
-      },
-    });
+    const page = parseInt((req as any).query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+    const skip = (page - 1) * limit;
+    const { search, category } = req.query;
+    const where: any = {
+      library_id: libraryId, // VERY IMPORTANT
+      ...(search && {
+        title: {
+          contains: search as string,
+          mode: "insensitive",
+        },
+      }),
+      ...(category && {
+        category: category as string,
+      }),
+    };
+    const [expenses, total] = await Promise.all([
+      prisma.expenses.findMany({
+        where,
+        skip,
+        take: limit,
+
+        orderBy: {
+          expense_date: "desc",
+        },
+        select: {
+          id: true,
+          title: true,
+          expense_date: true,
+          category: true,
+          amount: true,
+        },
+      }),
+      prisma.expenses.count({
+        where,
+      }),
+      ,
+    ]);
 
     return res.status(200).json({
       status: true,
       expenses,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     console.error("Error get the list of expenses", error);
