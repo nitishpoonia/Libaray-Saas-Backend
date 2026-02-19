@@ -9,6 +9,7 @@ export const subscriptionCheck = async (
   try {
     const user = (req as any).user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
+    console.log("Subscription middleware hit:", req.method, req.originalUrl);
 
     const owner = await prisma.libraryOwner.findUnique({
       where: { id: user?.id },
@@ -25,16 +26,16 @@ export const subscriptionCheck = async (
 
     const now = new Date();
     const isActive = owner && owner.library?.status === "active";
+    const isExpired = owner && owner.library?.subscription_end < new Date();
 
     const isTrial = owner && owner.library?.status === "trial";
+
     if (!owner || (!isActive && !isTrial)) {
       return res
         .status(403)
         .json({ error: "Active or trial subscription required" });
     }
     (req as any).ownerSubscription = owner;
-
-    const isExpired = owner && owner.library?.subscription_end < new Date();
 
     if (isExpired) {
       return res.status(403).json({

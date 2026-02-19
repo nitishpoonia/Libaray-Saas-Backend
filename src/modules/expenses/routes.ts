@@ -6,7 +6,6 @@ import { createExpense, listAllExpenses } from "./controller";
 const router = express.Router();
 
 router.use(authMiddleware);
-router.use(subscriptionCheck);
-router.post("/:libraryId/add-expense", createExpense);
 router.get("/:libraryId/list-all-expenses", listAllExpenses);
+router.post("/:libraryId/add-expense", subscriptionCheck, createExpense);
 export default router;

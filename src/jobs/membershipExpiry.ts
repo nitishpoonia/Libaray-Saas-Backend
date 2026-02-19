@@ -3,7 +3,7 @@ import { processExpiringMembershipNotifications } from "../modules/notification/
 
 export const startMembershipExpiryJob = () => {
   cron.schedule(
-    "35 20 * * *",
+    "0 9 * * *",
     async () => {
       console.log("Running membership expiry cron...");
       try {

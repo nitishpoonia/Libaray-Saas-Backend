@@ -12,7 +12,6 @@ router.use(authMiddleware);
 router.get("/my-libraries", getLibraries);
 router.get("/:id/overview", getLibraryOverview);
 
-router.use(subscriptionCheck);
-router.post("/", createLibrary);
+router.post("/", subscriptionCheck, createLibrary);
 
 export default router;
