@@ -121,7 +121,7 @@ export const getLibraryOverview = async (req: Request, res: Response) => {
     const paymentsTotal = paymentsSum._sum.amount
       ? Number(paymentsSum._sum.amount)
       : 0;
-      console.log('Seats', seatsCount)
+      console.log('Seats', seatsCount)  
     return res.status(200).json({
       libraryId: library.id,
       status: library.status,
