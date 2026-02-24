@@ -14,34 +14,17 @@ export const subscriptionCheck = async (
     const owner = await prisma.libraryOwner.findUnique({
       where: { id: user?.id },
       select: {
-        library: {
-          select: {
-            status: true,
-            subscription_start: true,
-            subscription_end: true,
-          },
-        },
+        library: true,
       },
     });
+    console.log("Library owner", owner);
 
-    const now = new Date();
-    const isActive = owner && owner.library?.status === "active";
-    const isExpired = owner && owner.library?.subscription_end < new Date();
-
-    const isTrial = owner && owner.library?.status === "trial";
-
-    if (!owner || (!isActive && !isTrial)) {
-      return res
-        .status(403)
-        .json({ error: "Active or trial subscription required" });
-    }
-    (req as any).ownerSubscription = owner;
-
-    if (isExpired) {
-      return res.status(403).json({
-        error: "You need an active subscription to perform this operation",
+    if (owner?.library) {
+      return res.status(400).json({
+        error: "Only one library can be created",
       });
     }
+
     next();
   } catch (error) {
     res.status(500).json({ error: "Subscription check failed" });

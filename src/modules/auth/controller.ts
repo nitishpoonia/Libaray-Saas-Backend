@@ -35,7 +35,7 @@ export const createLibraryOwner = async (
       });
     } else {
       user = await prisma.libraryOwner.findUnique({
-        where: { phone: identifier },
+        where: { phone: `+91${identifier}` },
       });
     }
     if (!kind) {
@@ -61,16 +61,16 @@ export const createLibraryOwner = async (
       data: {
         name,
         email: kind === "email" ? identifier : null,
-        phone: kind === "phone" ? identifier : null,
+        phone: kind === "phone" ? `+91${identifier}` : null,
         password_hash,
         joined_date: new Date(),
-        library: {
-          create: {
-            status: "trial",
-            subscription_start: new Date(),
-            subscription_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          },
-        },
+        // library: {
+        //   create: {
+        //     status: "trial",
+        //     subscription_start: new Date(),
+        //     subscription_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        //   },
+        // },
       },
       select: {
         id: true,
@@ -82,12 +82,6 @@ export const createLibraryOwner = async (
       },
     });
 
-    const libraryCount = await prisma.library.count({
-      where: {
-        library_owner_id: owner.id,
-        AND: [{ name: { not: null } }, { name: { not: "" } }],
-      },
-    });
 
     const token = jwt.sign(
       {
@@ -102,7 +96,7 @@ export const createLibraryOwner = async (
       message: "Signup successful",
       token,
       userId: owner.id,
-      isLibraryCreated: libraryCount > 0,
+      isLibraryCreated: false,
       owner,
     });
   } catch (error: any) {

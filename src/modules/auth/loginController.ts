@@ -34,7 +34,7 @@ export const loginLibraryOwner = async (
       });
     } else {
       user = await prisma.libraryOwner.findUnique({
-        where: { phone: identifier },
+        where: { phone: `+91${identifier}` },
       });
     }
 

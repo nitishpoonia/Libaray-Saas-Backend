@@ -1,6 +1,7 @@
 // src/modules/library/controller.ts
 import { Request, Response } from "express";
 import { prisma } from "../../utils/prisma.js";
+import { error, log } from "console";
 
 interface CreateLibraryBody {
   name: string;
@@ -20,41 +21,17 @@ export const createLibrary = async (req: Request, res: Response) => {
         .json({ error: "Name, address and seats are required" });
     }
 
-    // load owner subscription data
-    const owner = await prisma.libraryOwner.findUnique({
-      where: { id: Number(user.id) },
-      select: {
-        id: true,
-      },
-    });
-
-    if (!owner) return res.status(404).json({ error: "Owner not found" });
-
-    // count existing libraries for owner
-    const currentCount = await prisma.library.count({
-      where: { library_owner_id: owner.id },
-    });
-
-    if (currentCount > 1) {
-      return res.status(403).json({
-        error: "Library limit reached. You can only create one library",
-      });
-    }
-
-    // allowed -> proceed with create
-    const library = await prisma.library.update({
-      where: { library_owner_id: owner.id },
+    const library = await prisma.library.create({
       data: {
         name,
         address,
-        library_owner_id: owner.id,
+        library_owner_id: user?.id,
         subscription_start: new Date(),
         subscription_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         status: "trial",
       },
     });
 
-    // Create seats for the library
     if (seats && seats > 0) {
       const seatsData = Array.from({ length: seats }, (_, i) => ({
         library_id: library.id,
@@ -144,7 +121,7 @@ export const getLibraryOverview = async (req: Request, res: Response) => {
     const paymentsTotal = paymentsSum._sum.amount
       ? Number(paymentsSum._sum.amount)
       : 0;
-
+      console.log('Seats', seatsCount)
     return res.status(200).json({
       libraryId: library.id,
       status: library.status,
@@ -163,5 +140,97 @@ export const getLibraryOverview = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error getting library overview", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const updateLibrary = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
+
+    const { libraryName, seats, address } = req.body;
+
+    if (!libraryName && !seats && !address)
+      return res.status(400).json({
+        error: "At least one field is required",
+      });
+
+    const library = await prisma.library.findUnique({
+      where: { library_owner_id: user.id },
+      include: { seats: { include: { memberships: true } } },
+    });
+
+    if (!library) return res.status(404).json({ error: "Library not found" });
+
+    // 🪑 Seat Count Handling
+    if (typeof seats === "number") {
+      if (seats <= 0)
+        return res.status(400).json({
+          error: "Seats must be greater than 0",
+        });
+
+      const currentSeatCount = library.seats.length;
+
+      // Increasing seat count
+      if (seats > currentSeatCount) {
+        const seatsToCreate = Array.from(
+          { length: seats - currentSeatCount },
+          (_, i) => ({
+            library_id: library.id,
+            seat_number: String(currentSeatCount + i + 1),
+            has_locker: false,
+          }),
+        );
+
+        await prisma.seats.createMany({
+          data: seatsToCreate,
+        });
+      }
+
+      // Decreasing seat count
+      if (seats < currentSeatCount) {
+        const seatsSorted = library.seats.sort(
+          (a, b) => Number(a.seat_number) - Number(b.seat_number),
+        );
+
+        const seatsToRemove = seatsSorted.slice(seats);
+
+        const occupiedSeats = seatsToRemove.filter(
+          (seat) => seat.memberships.length > 0,
+        );
+
+        if (occupiedSeats.length > 0) {
+          return res.status(400).json({
+            error:
+              "Cannot reduce seat count because some seats are assigned to active memberships",
+          });
+        }
+
+        await prisma.seats.deleteMany({
+          where: {
+            id: { in: seatsToRemove.map((s) => s.id) },
+          },
+        });
+      }
+    }
+
+    // ✏️ Update basic fields
+    await prisma.library.update({
+      where: { library_owner_id: user.id },
+      data: {
+        name: libraryName ?? undefined,
+        address: address ?? undefined,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Library updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating library details", error);
+    return res.status(500).json({
+      error: "Error updating library details",
+    });
   }
 };

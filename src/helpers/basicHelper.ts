@@ -12,7 +12,7 @@ export function isPhone(value: string) {
 
 export function validateIdentifier(value: string): "email" | "phone" {
   if (isEmail(value)) return "email";
-  if (isPhone(value)) return "phone";
+  if (isPhone(`+91${value}`)) return "phone";
   throw new Error("Identifier must be a valid email or phone number");
 }
 
