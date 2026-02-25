@@ -1,146 +1,146 @@
-generator client {
-  provider = "prisma-client-js"
-  output   = "../generated/prisma"
-}
+  generator client {
+    provider = "prisma-client-js"
+    output   = "../generated/prisma"
+  }
 
-datasource db {
-  provider = "postgresql"
-}
+  datasource db {
+    provider = "postgresql"
+  }
 
-model LibraryOwner {
-  id                    Int      @id @default(autoincrement())
-  name                  String
-  email                 String?  @unique
-  phone                 String?  @unique
-  joined_date           DateTime
-  password_hash         String
-  expo_push_token       String?
-  notifications_enabled Boolean  @default(true)
-  updated_at            DateTime @updatedAt
-  created_at            DateTime @default(now())
-  library               Library?
-}
+  model LibraryOwner {
+    id                    Int      @id @default(autoincrement())
+    name                  String
+    email                 String?  @unique
+    phone                 String?  @unique
+    joined_date           DateTime
+    password_hash         String
+    expo_push_token       String?
+    notifications_enabled Boolean  @default(true)
+    updated_at            DateTime @updatedAt
+    created_at            DateTime @default(now())
+    library               Library?
+  }
 
-model Library {
-  id                 Int       @id @default(autoincrement())
-  library_owner_id   Int       @unique
-  name               String?
-  address            String?
-  subscription_start DateTime?
-  subscription_end   DateTime?
-  plan_type          String?
-  status             String // trial/active/expired
-  created_at         DateTime  @default(now())
-  updated_at         DateTime  @updatedAt
+  model Library {
+    id                 Int       @id @default(autoincrement())
+    library_owner_id   Int       @unique
+    name               String?
+    address            String?
+    subscription_start DateTime?
+    subscription_end   DateTime?
+    plan_type          String?
+    status             String // trial/active/expired
+    created_at         DateTime  @default(now())
+    updated_at         DateTime  @updatedAt
 
-  owner            LibraryOwner      @relation(fields: [library_owner_id], references: [id])
-  seats            Seats[]
-  students         Students[]
-  memberships      Memberships[]
-  expenses         Expenses[]
-  payments         Payments[]
-  notificationLogs NotificationLog[]
+    owner            LibraryOwner      @relation(fields: [library_owner_id], references: [id])
+    seats            Seats[]
+    students         Students[]
+    memberships      Memberships[]
+    expenses         Expenses[]
+    payments         Payments[]
+    notificationLogs NotificationLog[]
 
-  @@index([library_owner_id])
-}
+    @@index([library_owner_id])
+  }
 
-model Seats {
-  id          Int      @id @default(autoincrement())
-  library_id  Int
-  seat_number String
-  has_locker  Boolean
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  model Seats {
+    id          Int      @id @default(autoincrement())
+    library_id  Int
+    seat_number String
+    has_locker  Boolean
+    created_at  DateTime @default(now())
+    updated_at  DateTime @updatedAt
 
-  library     Library       @relation(fields: [library_id], references: [id])
-  memberships Memberships[]
+    library     Library       @relation(fields: [library_id], references: [id])
+    memberships Memberships[]
 
-  @@unique([library_id, seat_number])
-}
+    @@unique([library_id, seat_number])
+  }
 
-model Students {
-  id         Int      @id @default(autoincrement())
-  library_id Int
-  name       String
-  phone      String
-  isActive   Boolean  @default(true)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  model Students {
+    id         Int      @id @default(autoincrement())
+    library_id Int
+    name       String
+    phone      String
+    isActive   Boolean  @default(true)
+    created_at DateTime @default(now())
+    updated_at DateTime @updatedAt
 
-  library     Library       @relation(fields: [library_id], references: [id])
-  memberships Memberships[]
-}
+    library     Library       @relation(fields: [library_id], references: [id])
+    memberships Memberships[]
+  }
 
-model Memberships {
-  id Int @id @default(autoincrement())
+  model Memberships {
+    id Int @id @default(autoincrement())
 
-  start_hour       Int
-  start_minute     Int
-  end_hour         Int
-  end_minute       Int
-  crosses_midnight Boolean @default(false)
+    start_hour       Int
+    start_minute     Int
+    end_hour         Int
+    end_minute       Int
+    crosses_midnight Boolean @default(false)
 
-  start_date DateTime
-  end_date   DateTime
-  status     String
-  total_fee  Decimal
+    start_date DateTime
+    end_date   DateTime
+    status     String
+    total_fee  Decimal
 
-  student_id Int
-  seat_id    Int
-  library_id Int
+    student_id Int
+    seat_id    Int
+    library_id Int
 
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+    created_at DateTime @default(now())
+    updated_at DateTime @updatedAt
 
-  student          Students          @relation(fields: [student_id], references: [id], onDelete: Cascade)
-  seat             Seats             @relation(fields: [seat_id], references: [id])
-  library          Library           @relation(fields: [library_id], references: [id])
-  payments         Payments[]
-  notificationLogs NotificationLog[]
+    student          Students          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+    seat             Seats             @relation(fields: [seat_id], references: [id])
+    library          Library           @relation(fields: [library_id], references: [id])
+    payments         Payments[]
+    notificationLogs NotificationLog[]
 
-  @@index([seat_id, status])
-  @@index([library_id])
-}
+    @@index([seat_id, status])
+    @@index([library_id])
+  }
 
-model Expenses {
-  id           Int      @id @default(autoincrement())
-  library_id   Int
-  title        String
-  category     String
-  amount       Decimal
-  expense_date DateTime
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  model Expenses {
+    id           Int      @id @default(autoincrement())
+    library_id   Int
+    title        String
+    category     String
+    amount       Decimal
+    expense_date DateTime
+    created_at   DateTime @default(now())
+    updated_at   DateTime @updatedAt
 
-  library Library @relation(fields: [library_id], references: [id])
-  @@index([library_id, expense_date])
-}
+    library Library @relation(fields: [library_id], references: [id])
+    @@index([library_id, expense_date])
+  }
 
-model Payments {
-  id            Int      @id @default(autoincrement())
-  library_id    Int
-  membership_id Int?
-  amount        Decimal
-  payment_date  DateTime
-  payment_mode  String
-  reference     String?
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  model Payments {
+    id            Int      @id @default(autoincrement())
+    library_id    Int
+    membership_id Int?
+    amount        Decimal
+    payment_date  DateTime
+    payment_mode  String
+    reference     String?
+    created_at    DateTime @default(now())
+    updated_at    DateTime @updatedAt
 
-  library    Library      @relation(fields: [library_id], references: [id])
-  membership Memberships? @relation(fields: [membership_id], references: [id])
-}
+    library    Library      @relation(fields: [library_id], references: [id])
+    membership Memberships? @relation(fields: [membership_id], references: [id])
+  }
 
-model NotificationLog {
-  id                Int      @id @default(autoincrement())
-  library_id        Int
-  membership_id     Int
-  sent_at           DateTime @default(now())
-  notification_type String 
+  model NotificationLog {
+    id                Int      @id @default(autoincrement())
+    library_id        Int
+    membership_id     Int
+    sent_at           DateTime @default(now())
+    notification_type String 
 
-  library    Library     @relation(fields: [library_id], references: [id])
-  membership Memberships @relation(fields: [membership_id], references: [id])
+    library    Library     @relation(fields: [library_id], references: [id])
+    membership Memberships @relation(fields: [membership_id], references: [id])
 
-  @@unique([membership_id, notification_type, sent_at])
-  @@index([library_id, sent_at])
-}
+    @@unique([membership_id, notification_type, sent_at])
+    @@index([library_id, sent_at])
+  }

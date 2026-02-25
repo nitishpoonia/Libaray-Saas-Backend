@@ -11,7 +11,7 @@ import { delayMiddleware } from "./middleware/delay.js";
 
 const app = express();
 app.use(express.json());
-app.use(delayMiddleware);
+// app.use(delayMiddleware);
 app.use("/owners", libraryOwnerRoutes);
 app.use("/libraries", libraryRoutes);
 app.use("/libraries", studentRoutes);

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../../utils/prisma.js";
+import dayjs from "dayjs";
 
 export const getDashboard = async (req: Request, res: Response) => {
   console.log("**********************************");
@@ -20,6 +21,27 @@ export const getDashboard = async (req: Request, res: Response) => {
       },
     });
 
+    const today = dayjs().startOf("day").toDate();
+    const overdue = await prisma.memberships.count({
+      where: {
+        library_id: libraryId,
+        end_date: {
+          lt: today,
+        },
+      },
+    });
+
+    const sevenDaysLater = dayjs().add(7, "day").endOf("day").toDate();
+
+    const expiringSoon = await prisma.memberships.count({
+      where: {
+        library_id: libraryId,
+        end_date: {
+          gte: today,
+          lte: sevenDaysLater,
+        },
+      },
+    });
     const totalSeats = await prisma.seats.count({
       where: {
         library_id: libraryId,
@@ -69,8 +91,8 @@ export const getDashboard = async (req: Request, res: Response) => {
           0,
           Math.ceil(
             (library.subscription_end.getTime() - Date.now()) /
-              (1000 * 60 * 60 * 24)
-          )
+              (1000 * 60 * 60 * 24),
+          ),
         )
       : 0;
 
@@ -102,6 +124,10 @@ export const getDashboard = async (req: Request, res: Response) => {
           status: library.status,
           endsOn: library.subscription_end,
           daysRemaining,
+        },
+        membership: {
+          overdue: overdue,
+          expiringSoon: expiringSoon
         },
       },
     });

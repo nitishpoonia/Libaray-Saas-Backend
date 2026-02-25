@@ -39,7 +39,7 @@ export const createStudent = async (req: Request, res: Response) => {
       amount,
       library_id,
     } = req.body as CreateStudentBody;
-
+    console.log("Request body", req.body);
     // Validate required fields
     if (!name) return res.status(400).json({ error: "Name is required" });
     if (!phone) return res.status(400).json({ error: "Phone is required" });
@@ -53,7 +53,7 @@ export const createStudent = async (req: Request, res: Response) => {
     if (!amount) return res.status(400).json({ error: "Amount is required" });
     if (!library_id)
       return res.status(400).json({ error: "Library Id is required" });
-
+    console.log("b ody in create student", req.body);
     // Parse timing
     const timeSlot = parseTimingString(timing);
     const [startTime, endTime] = timing.split(" - ");
@@ -155,6 +155,7 @@ export const createStudent = async (req: Request, res: Response) => {
     const library = await prisma.library.findUnique({
       where: { id: library_id },
     });
+
     if (!library) {
       return res.status(400).json({ error: "Library not found" });
     }
@@ -482,6 +483,92 @@ export const markStudentFeesAsPaid = async (req: Request, res: Response) => {
     console.error("Error marking student fees as paid:", error);
     return res.status(500).json({
       error: "An error occurred while processing the payment",
+    });
+  }
+};
+
+export const listOverdueStudents = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userId = user?.id;
+
+    const libraryId = await prisma.library.findUnique({
+      where: {
+        library_owner_id: userId,
+      },
+      select: {
+        id: true,
+      },
+    });
+    console.log("lbary id", libraryId);
+    if (!libraryId)
+      return res.status(400).json({ error: "No library exists for this user" });
+    const today = dayjs().startOf("day").toDate();
+
+    const overdueStudentList = await prisma.memberships.findMany({
+      where: {
+        library_id: libraryId?.id,
+        end_date: {
+          lt: today,
+        },
+      },
+      select: {
+        end_date: true,
+        student: true,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Student list",
+      overdueStudentList,
+    });
+  } catch (error) {
+    console.error("Error listing overdue students", error);
+    return res.status(500).json({
+      error: "Error listing overdue students",
+    });
+  }
+};
+
+export const listExpiringSoonStudents = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userId = user?.id;
+
+    const libraryId = await prisma.library.findUnique({
+      where: {
+        library_owner_id: userId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    const sevenDaysLater = dayjs().add(7, "day").endOf("day").toDate();
+    const today = dayjs().startOf("day").toDate();
+
+    const expiringSoonList = await prisma.memberships.findMany({
+      where: {
+        library_id: libraryId?.id,
+        end_date: {
+          gte: today,
+          lte: sevenDaysLater,
+        },
+      },
+      select: {
+        end_date: true,
+        student: true,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Expiring Student list",
+      expiringSoonList,
+    });
+  } catch (error) {
+    console.error("Error listing expiring students", error);
+    return res.status(500).json({
+      error: "Error listing expiring soon students",
     });
   }
 };
