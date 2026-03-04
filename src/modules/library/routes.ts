@@ -6,13 +6,12 @@ import {
   getLibraryOverview,
   updateLibrary,
 } from "./controller.js";
-import { subscriptionCheck } from "../../middleware/subscriptionCheck.js";
 
 const router = express.Router();
 router.use(authMiddleware);
 router.get("/my-libraries", getLibraries);
 router.get("/:id/overview", getLibraryOverview);
 router.patch("/update-library-details", updateLibrary);
-router.post("/", subscriptionCheck, createLibrary);
+router.post("/", createLibrary);
 
 export default router;

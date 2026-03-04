@@ -15,6 +15,7 @@ export const createLibrary = async (req: Request, res: Response) => {
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const { name, address, seats } = req.body as CreateLibraryBody;
+    console.log("Create library request body:", req.body, user);
     if (!name || !address || seats === undefined) {
       return res
         .status(400)
@@ -121,7 +122,7 @@ export const getLibraryOverview = async (req: Request, res: Response) => {
     const paymentsTotal = paymentsSum._sum.amount
       ? Number(paymentsSum._sum.amount)
       : 0;
-      console.log('Seats', seatsCount)  
+    console.log("Seats", seatsCount);
     return res.status(200).json({
       libraryId: library.id,
       status: library.status,

@@ -90,7 +90,7 @@ export const listAllExpenses = async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
     const { search, category } = req.query;
     const where: any = {
-      library_id: libraryId, // VERY IMPORTANT
+      library_id: libraryId,
       ...(search && {
         title: {
           contains: search as string,

@@ -21,7 +21,6 @@ export const createLibraryOwner = async (
 
     const { name, identifier, password } = body as SignupBody;
 
-    // 1. Validation
     if (!name || name.length < 2) {
       return res.status(400).json({ error: "Name is required (min 2 chars)" });
     }
@@ -53,10 +52,8 @@ export const createLibraryOwner = async (
         .json({ error: "Email or phone already registered" });
     }
 
-    // 3. Hash password
     const password_hash = await bcrypt.hash(password, 10);
 
-    // 4. Create owner
     const owner = await prisma.libraryOwner.create({
       data: {
         name,
@@ -81,7 +78,7 @@ export const createLibraryOwner = async (
         created_at: true,
       },
     });
-
+    console.log("Owner created:", owner);
 
     const token = jwt.sign(
       {
