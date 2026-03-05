@@ -16,7 +16,7 @@ export const createLibrary = async (req: Request, res: Response) => {
 
     const { name, address, seats } = req.body as CreateLibraryBody;
     console.log("Create library request body:", req.body, user);
-    if (!name || !address || seats === undefined) {
+    if (!name || !address || seats === undefined) { 
       return res
         .status(400)
         .json({ error: "Name, address and seats are required" });
