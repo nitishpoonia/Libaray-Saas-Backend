@@ -317,34 +317,55 @@ export const getAllStudents = async (req: Request, res: Response) => {
     }
 
     const libraryId = Number(req.params.libraryId);
-    console.log("libarary id", libraryId);
 
     if (isNaN(libraryId)) {
       return res.status(400).json({ error: "Invalid library id" });
     }
 
     const status = (req.query.status as string) || "active";
-    // allowed: active | inactive | all
 
-    const students = await prisma.students.findMany({
-      where: {
-        library_id: libraryId,
-        isActive: true,
-      },
-      include: {
-        memberships: {
-          where: {
-            status: "active",
-          },
-          include: {
-            seat: true,
+    // pagination
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+    const skip = (page - 1) * limit;
+    const { search } = req.query;
+
+    console.log(req.query);
+    const where: any = {
+      library_id: libraryId,
+      ...(search && {
+        name: {
+          contains: search as string,
+          mode: "insensitive",
+        },
+      }),
+      isActive: true,
+    };
+
+    const [students, total] = await Promise.all([
+      prisma.students.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          memberships: {
+            where: {
+              status: "active",
+            },
+            include: {
+              seat: true,
+            },
           },
         },
-      },
-      orderBy: {
-        created_at: "desc",
-      },
-    });
+        orderBy: {
+          created_at: "desc",
+        },
+      }),
+
+      prisma.students.count({
+        where,
+      }),
+    ]);
 
     const result = students
       .filter((student) => {
@@ -352,7 +373,7 @@ export const getAllStudents = async (req: Request, res: Response) => {
 
         if (status === "active") return hasActiveMembership;
         if (status === "inactive") return !hasActiveMembership;
-        return true; // all
+        return true;
       })
       .map((student) => {
         const membership = student.memberships[0] || null;
@@ -363,6 +384,7 @@ export const getAllStudents = async (req: Request, res: Response) => {
           phone: student.phone,
 
           seatNumber: membership?.seat?.seat_number ?? null,
+
           timing: membership
             ? `${formatTime(
                 membership.start_hour,
@@ -373,6 +395,7 @@ export const getAllStudents = async (req: Request, res: Response) => {
           membershipStatus: membership?.status ?? "inactive",
           membershipEndDate: membership?.end_date ?? null,
           membershipId: membership?.id,
+
           daysRemaining: membership
             ? Math.max(
                 0,
@@ -387,8 +410,14 @@ export const getAllStudents = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      count: result.length,
       students: result,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     console.error("List students error:", error);
