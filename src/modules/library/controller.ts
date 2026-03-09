@@ -28,7 +28,7 @@ export const createLibrary = async (req: Request, res: Response) => {
         address,
         library_owner_id: user?.id,
         subscription_start: new Date(),
-        subscription_end: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        subscription_end: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
         status: "trial",
       },
     });

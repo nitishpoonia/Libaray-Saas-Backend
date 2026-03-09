@@ -9,6 +9,7 @@ import {
 } from "../../utils/timeUtils";
 import { parseTime } from "../../helpers/basicHelper";
 import dayjs from "dayjs";
+import { generateReceiptNumber } from "../../utils/receiptUtils";
 
 interface CreateStudentBody {
   name: string;
@@ -17,17 +18,34 @@ interface CreateStudentBody {
   timing: string;
   booked_for: number;
   payment_method: string;
-  amount: number;
+  total_fee: number;
+  amount_paid: number;
   library_id: number;
 }
+
+interface AddPaymentBody {
+  membership_id: number;
+  library_id: number;
+  amount: number;
+  payment_method: string;
+  notes?: string;
+}
+
+const deriveMembershipStatus = (
+  totalFee: number | Prisma.Decimal,
+  paidAmount: number | Prisma.Decimal,
+): "paid" | "active" => {
+  const total = new Prisma.Decimal(totalFee);
+  const paid = new Prisma.Decimal(paidAmount);
+  return paid.greaterThanOrEqualTo(total) ? "paid" : "active";
+};
 
 export const createStudent = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
-    if (!req.body) {
+    if (!req.body)
       return res.status(400).json({ error: "Request body is required" });
-    }
 
     const {
       name,
@@ -36,11 +54,12 @@ export const createStudent = async (req: Request, res: Response) => {
       timing,
       booked_for,
       payment_method,
-      amount,
+      total_fee,
+      amount_paid,
       library_id,
     } = req.body as CreateStudentBody;
-    console.log("Request body", req.body);
-    // Validate required fields
+
+    // ── Validation ────────────────────────────────────────────────────────────
     if (!name) return res.status(400).json({ error: "Name is required" });
     if (!phone) return res.status(400).json({ error: "Phone is required" });
     if (!seat_number)
@@ -50,27 +69,32 @@ export const createStudent = async (req: Request, res: Response) => {
     if (!timing) return res.status(400).json({ error: "Timing is required" });
     if (!payment_method)
       return res.status(400).json({ error: "Payment Method is required" });
-    if (!amount) return res.status(400).json({ error: "Amount is required" });
     if (!library_id)
       return res.status(400).json({ error: "Library Id is required" });
-    console.log("b ody in create student", req.body);
-    // Parse timing
+
+    if (total_fee === undefined || total_fee === null)
+      return res.status(400).json({ error: "Total fee is required" });
+    if (amount_paid === undefined || amount_paid === null)
+      return res.status(400).json({ error: "Amount paid is required" });
+    if (amount_paid < 0)
+      return res.status(400).json({ error: "Amount paid cannot be negative" });
+    if (amount_paid > total_fee)
+      return res
+        .status(400)
+        .json({ error: "Amount paid cannot exceed total fee" });
+
+    // ── Parse & validate timing ───────────────────────────────────────────────
     const timeSlot = parseTimingString(timing);
     const [startTime, endTime] = timing.split(" - ");
-
     const parsedStartTime = parseTime(startTime);
     const parsedEndTime = parseTime(endTime);
 
     if (!parsedStartTime || !parsedEndTime) {
-      return res.status(400).json({
-        error: "Invalid time format. Use HH:MM format",
-      });
+      return res
+        .status(400)
+        .json({ error: "Invalid time format. Use HH:MM format" });
     }
-    const newStartMinutes =
-      parsedStartTime.getHours() * 60 + parsedStartTime.getMinutes();
-    const newEndMinutes =
-      parsedEndTime.getHours() * 60 + parsedEndTime.getMinutes();
-    // Validate time format
+
     if (
       !isValidTime(timeSlot.start_hour, timeSlot.start_minute) ||
       !isValidTime(timeSlot.end_hour, timeSlot.end_minute)
@@ -80,25 +104,24 @@ export const createStudent = async (req: Request, res: Response) => {
       });
     }
 
+    const newStartMinutes =
+      parsedStartTime.getHours() * 60 + parsedStartTime.getMinutes();
+    const newEndMinutes =
+      parsedEndTime.getHours() * 60 + parsedEndTime.getMinutes();
+
+    // ── Seat availability check ───────────────────────────────────────────────
     const startDate = dayjs().toDate();
     const endDate = dayjs().add(booked_for, "day").toDate();
+
     const allSeats = await prisma.seats.findMany({
-      where: {
-        library_id: library_id,
-      },
-      select: {
-        id: true,
-        seat_number: true,
-        has_locker: true,
-      },
+      where: { library_id },
+      select: { id: true, seat_number: true, has_locker: true },
     });
 
-    // Get seats that have conflicting memberships
     const bookedSeats = await prisma.memberships.findMany({
       where: {
-        library_id: library_id,
-        status: "active",
-        // Date range overlap check
+        library_id,
+        status: { in: ["active", "paid"] }, // ← check both statuses
         AND: [
           { start_date: { lte: endDate } },
           { end_date: { gte: startDate } },
@@ -114,97 +137,79 @@ export const createStudent = async (req: Request, res: Response) => {
       },
     });
 
-    // Filter out seats with time conflicts
     const bookedSeatIds = new Set(
       bookedSeats
-        .filter((membership) => {
-          return hasTimeOverlap(
+        .filter((membership) =>
+          hasTimeOverlap(
             newStartMinutes,
             newEndMinutes,
             { hour: membership.start_hour, minute: membership.start_minute },
             { hour: membership.end_hour, minute: membership.end_minute },
             membership.crosses_midnight,
-          );
-        })
+          ),
+        )
         .map((m) => m.seat_id),
     );
 
-    // Return available seats (seats not in the booked set)
     const availableSeats = allSeats.filter(
       (seat) => !bookedSeatIds.has(seat.id),
     );
 
-    const isSeatAvailableSeat = availableSeats.some((seat) => {
-      const seatFromList = Number(seat.seat_number);
-      const seatToCheck = Number(seat_number);
+    const isSeatAvailable = availableSeats.some(
+      (seat) => Number(seat.seat_number) === Number(seat_number),
+    );
 
-      console.log("Comparing seats →", {
-        seatFromList,
-        seatToCheck,
-      });
-
-      return seatFromList === seatToCheck;
-    });
-    if (!isSeatAvailableSeat) {
-      return res.status(403).json({
-        error: "This seat number is not available",
-      });
+    if (!isSeatAvailable) {
+      return res
+        .status(403)
+        .json({ error: "This seat number is not available" });
     }
 
-    // Verify library exists
+    // ── Library & seat lookup ─────────────────────────────────────────────────
     const library = await prisma.library.findUnique({
       where: { id: library_id },
     });
+    if (!library) return res.status(400).json({ error: "Library not found" });
 
-    if (!library) {
-      return res.status(400).json({ error: "Library not found" });
-    }
-
-    // Find seat
     const seat = await prisma.seats.findFirst({
-      where: {
-        library_id,
-        seat_number: String(seat_number),
-      },
+      where: { library_id, seat_number: String(seat_number) },
       select: { id: true },
     });
-    if (!seat) {
-      return res.status(400).json({ error: "Seat not found" });
-    }
+    if (!seat) return res.status(400).json({ error: "Seat not found" });
 
-    // Create student with membership
+    // ── Generate receipt number before the transaction ────────────────────────
+    const receiptNumber = await generateReceiptNumber();
+
+    // ── Derive initial membership status ─────────────────────────────────────
+    const membershipStatus = deriveMembershipStatus(total_fee, amount_paid);
+
+    // ── Create student + membership + first payment atomically ────────────────
     const student = await prisma.students.create({
       data: {
         name,
         phone,
-        library: {
-          connect: { id: library_id },
-        },
+        library: { connect: { id: library_id } },
         memberships: {
           create: {
             start_date: startDate,
             end_date: endDate,
-            status: "active",
+            status: membershipStatus, // "paid" or "active"
+            total_fee: new Prisma.Decimal(total_fee),
+            paid_amount: new Prisma.Decimal(amount_paid), // ← new field
             start_hour: timeSlot.start_hour,
             start_minute: timeSlot.start_minute,
             end_hour: timeSlot.end_hour,
             end_minute: timeSlot.end_minute,
             crosses_midnight: timeSlot.crosses_midnight,
-            total_fee: new Prisma.Decimal(amount),
-            library: {
-              connect: { id: library_id },
-            },
-            seat: {
-              connect: { id: seat.id },
-            },
+            library: { connect: { id: library_id } },
+            seat: { connect: { id: seat.id } },
             payments: {
               create: {
-                amount: new Prisma.Decimal(amount),
+                amount: new Prisma.Decimal(amount_paid),
                 payment_mode: payment_method,
                 payment_date: new Date(),
-                library: {
-                  connect: { id: library_id },
-                },
+                receipt_number: receiptNumber, // ← new field
+                library: { connect: { id: library_id } },
               },
             },
           },
@@ -212,35 +217,151 @@ export const createStudent = async (req: Request, res: Response) => {
       },
       include: {
         memberships: {
-          include: {
-            payments: true,
-            seat: true,
-          },
+          include: { payments: true, seat: true },
         },
       },
     });
 
-    // Format response
+    // ── Format response ───────────────────────────────────────────────────────
+    const membership = student.memberships[0];
+    const payment = membership.payments[0];
+
     const formattedStudent = {
       ...student,
       memberships: student.memberships.map((m) => ({
         ...m,
-        timing: `${formatTime(m.start_hour, m.start_minute)} - ${formatTime(
-          m.end_hour,
-          m.end_minute,
-        )}`,
+        pending_amount: new Prisma.Decimal(m.total_fee)
+          .minus(new Prisma.Decimal(m.paid_amount))
+          .toNumber(),
+        timing: `${formatTime(m.start_hour, m.start_minute)} - ${formatTime(m.end_hour, m.end_minute)}`,
       })),
     };
 
     return res.status(201).json({
       success: true,
       student: formattedStudent,
+      receipt: {
+        receipt_number: payment.receipt_number,
+        student_name: student.name,
+        seat_number: seat_number,
+        total_fee,
+        amount_paid,
+        pending_amount: total_fee - amount_paid,
+        payment_mode: payment_method,
+        payment_date: payment.payment_date,
+        membership_start: startDate,
+        membership_end: endDate,
+        timing,
+      },
     });
   } catch (error) {
-    console.log("Error creating student", error);
-    return res.status(500).json({
-      error: "Error creating student",
+    console.error("Error creating student", error);
+    return res.status(500).json({ error: "Error creating student" });
+  }
+};
+
+export const addPayment = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
+
+    const { membership_id, library_id, amount, payment_method, notes } =
+      req.body as AddPaymentBody;
+
+    // ── Validation ────────────────────────────────────────────────────────────
+    if (!membership_id)
+      return res.status(400).json({ error: "Membership ID is required" });
+    if (!library_id)
+      return res.status(400).json({ error: "Library ID is required" });
+    if (!amount || amount <= 0)
+      return res
+        .status(400)
+        .json({ error: "A valid payment amount is required" });
+    if (!payment_method)
+      return res.status(400).json({ error: "Payment method is required" });
+
+    // ── Fetch membership ──────────────────────────────────────────────────────
+    const membership = await prisma.memberships.findFirst({
+      where: { id: membership_id, library_id },
+      include: { student: true, seat: true },
     });
+
+    if (!membership) {
+      return res.status(404).json({ error: "Membership not found" });
+    }
+
+    if (membership.status === "expired") {
+      return res
+        .status(400)
+        .json({ error: "Cannot add payment to an expired membership" });
+    }
+
+    // ── Check payment doesn't exceed pending amount ───────────────────────────
+    const currentPaid = new Prisma.Decimal(membership.paid_amount);
+    const totalFee = new Prisma.Decimal(membership.total_fee);
+    const pendingAmount = totalFee.minus(currentPaid);
+
+    if (pendingAmount.lessThanOrEqualTo(0)) {
+      return res
+        .status(400)
+        .json({ error: "No pending amount for this membership" });
+    }
+
+    const paymentAmount = new Prisma.Decimal(amount);
+    if (paymentAmount.greaterThan(pendingAmount)) {
+      return res.status(400).json({
+        error: `Amount exceeds pending dues. Maximum payable: ${pendingAmount.toNumber()}`,
+      });
+    }
+
+    // ── Generate receipt number ───────────────────────────────────────────────
+    const receiptNumber = await generateReceiptNumber();
+
+    // ── Update membership + create payment atomically ─────────────────────────
+    const newPaidAmount = currentPaid.plus(paymentAmount);
+    const newStatus = deriveMembershipStatus(totalFee, newPaidAmount);
+
+    const [payment] = await prisma.$transaction([
+      prisma.payments.create({
+        data: {
+          amount: paymentAmount,
+          payment_mode: payment_method,
+          payment_date: new Date(),
+          receipt_number: receiptNumber,
+          notes: notes ?? null,
+          library: { connect: { id: library_id } },
+          membership: { connect: { id: membership_id } },
+        },
+      }),
+      prisma.memberships.update({
+        where: { id: membership_id },
+        data: {
+          paid_amount: newPaidAmount,
+          status: newStatus,
+        },
+      }),
+    ]);
+
+    const remainingPending = pendingAmount.minus(paymentAmount);
+
+    return res.status(200).json({
+      success: true,
+      receipt: {
+        receipt_number: receiptNumber,
+        student_name: membership.student.name,
+        seat_number: membership.seat.seat_number,
+        total_fee: totalFee.toNumber(),
+        amount_paid_now: paymentAmount.toNumber(),
+        total_paid_so_far: newPaidAmount.toNumber(),
+        pending_amount: remainingPending.toNumber(),
+        payment_mode: payment_method,
+        payment_date: payment.payment_date,
+        membership_status: newStatus,
+      },
+    });
+  } catch (error) {
+    console.error("Error adding payment", error);
+    return res.status(500).json({ error: "Error adding payment" });
   }
 };
 
