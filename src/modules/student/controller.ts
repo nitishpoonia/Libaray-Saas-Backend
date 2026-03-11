@@ -54,10 +54,16 @@ export const createStudent = async (req: Request, res: Response) => {
       timing,
       booked_for,
       payment_method,
-      total_fee,
-      amount_paid,
+      total_fee: totalFee,
+      amount_paid: amountPaid,
       library_id,
     } = req.body as CreateStudentBody;
+    console.log("Create student request body:", req.body);
+
+    const total_fee = Number(totalFee);
+    const amount_paid = Number(amountPaid);
+
+    console.log(typeof total_fee);
 
     // ── Validation ────────────────────────────────────────────────────────────
     if (!name) return res.status(400).json({ error: "Name is required" });
@@ -195,7 +201,7 @@ export const createStudent = async (req: Request, res: Response) => {
             end_date: endDate,
             status: membershipStatus, // "paid" or "active"
             total_fee: new Prisma.Decimal(total_fee),
-            paid_amount: new Prisma.Decimal(amount_paid), // ← new field
+            paid_amount: new Prisma.Decimal(amount_paid),
             start_hour: timeSlot.start_hour,
             start_minute: timeSlot.start_minute,
             end_hour: timeSlot.end_hour,
@@ -280,7 +286,7 @@ export const addPayment = async (req: Request, res: Response) => {
     if (!payment_method)
       return res.status(400).json({ error: "Payment method is required" });
 
-    // ── Fetch membership ──────────────────────────────────────────────────────
+
     const membership = await prisma.memberships.findFirst({
       where: { id: membership_id, library_id },
       include: { student: true, seat: true },
@@ -317,7 +323,6 @@ export const addPayment = async (req: Request, res: Response) => {
     // ── Generate receipt number ───────────────────────────────────────────────
     const receiptNumber = await generateReceiptNumber();
 
-    // ── Update membership + create payment atomically ─────────────────────────
     const newPaidAmount = currentPaid.plus(paymentAmount);
     const newStatus = deriveMembershipStatus(totalFee, newPaidAmount);
 
