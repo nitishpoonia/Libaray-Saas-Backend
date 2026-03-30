@@ -31,6 +31,23 @@ interface AddPaymentBody {
   notes?: string;
 }
 
+interface UpdateStudentBody {
+  name?: string;
+  phone?: string;
+}
+
+interface RenewMembershipBody {
+  membership_id: number;
+  student_id: number;
+  amount: number;
+  payment_method: string;
+  renewal_days: number;
+  renewal_fee?: number;
+  notes?: string;
+  seat_number?: number | string;
+  timing?: string;
+}
+
 const deriveMembershipStatus = (
   totalFee: number | Prisma.Decimal,
   paidAmount: number | Prisma.Decimal,
@@ -286,7 +303,6 @@ export const addPayment = async (req: Request, res: Response) => {
     if (!payment_method)
       return res.status(400).json({ error: "Payment method is required" });
 
-
     const membership = await prisma.memberships.findFirst({
       where: { id: membership_id, library_id },
       include: { student: true, seat: true },
@@ -370,6 +386,264 @@ export const addPayment = async (req: Request, res: Response) => {
   }
 };
 
+export const renewMembership = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
+
+    const libraryId = Number(req.params.libraryId);
+    if (isNaN(libraryId)) {
+      return res.status(400).json({ error: "Invalid library id" });
+    }
+
+    const {
+      membership_id,
+      student_id,
+      amount,
+      payment_method,
+      renewal_days,
+      renewal_fee,
+      notes,
+      seat_number,
+      timing,
+    } = req.body as RenewMembershipBody;
+
+    if (!membership_id)
+      return res.status(400).json({ error: "Membership ID is required" });
+    if (!student_id)
+      return res.status(400).json({ error: "Student ID is required" });
+    if (!payment_method)
+      return res.status(400).json({ error: "Payment method is required" });
+
+    const renewalDays = Number(renewal_days);
+    const paymentAmountNumber = Number(amount);
+    const renewalFeeNumber =
+      renewal_fee === undefined ? paymentAmountNumber : Number(renewal_fee);
+
+    if (!Number.isFinite(paymentAmountNumber) || paymentAmountNumber <= 0) {
+      return res
+        .status(400)
+        .json({ error: "A valid payment amount is required" });
+    }
+    if (!Number.isFinite(renewalDays) || renewalDays <= 0) {
+      return res
+        .status(400)
+        .json({ error: "Renewal days must be greater than 0" });
+    }
+    if (!Number.isFinite(renewalFeeNumber) || renewalFeeNumber <= 0) {
+      return res.status(400).json({ error: "A valid renewal fee is required" });
+    }
+    if (paymentAmountNumber > renewalFeeNumber) {
+      return res.status(400).json({
+        error: "Amount paid cannot exceed renewal fee",
+      });
+    }
+
+    const membership = await prisma.memberships.findFirst({
+      where: {
+        id: membership_id,
+        student_id,
+        library_id: libraryId,
+      },
+      include: {
+        student: true,
+        seat: {
+          select: {
+            id: true,
+            seat_number: true,
+            has_locker: true,
+          },
+        },
+      },
+    });
+
+    if (!membership) {
+      return res.status(404).json({
+        error: "Membership not found for this student and library",
+      });
+    }
+
+    let nextSeatId = membership.seat_id;
+    let nextSeatNumber = membership.seat.seat_number;
+    let nextStartHour = membership.start_hour;
+    let nextStartMinute = membership.start_minute;
+    let nextEndHour = membership.end_hour;
+    let nextEndMinute = membership.end_minute;
+    let nextCrossesMidnight = membership.crosses_midnight;
+
+    if (timing !== undefined) {
+      const parsed = parseTimingString(timing);
+      const [startTime, endTime] = timing.split(" - ");
+      const parsedStartTime = parseTime(startTime);
+      const parsedEndTime = parseTime(endTime);
+
+      if (!parsedStartTime || !parsedEndTime) {
+        return res
+          .status(400)
+          .json({ error: "Invalid time format. Use HH:MM format" });
+      }
+
+      if (
+        !isValidTime(parsed.start_hour, parsed.start_minute) ||
+        !isValidTime(parsed.end_hour, parsed.end_minute)
+      ) {
+        return res.status(400).json({
+          error: "Invalid time format. Hours must be 0-23, minutes 0-59",
+        });
+      }
+
+      nextStartHour = parsed.start_hour;
+      nextStartMinute = parsed.start_minute;
+      nextEndHour = parsed.end_hour;
+      nextEndMinute = parsed.end_minute;
+      nextCrossesMidnight = parsed.crosses_midnight;
+    }
+
+    if (seat_number !== undefined) {
+      const targetSeat = await prisma.seats.findFirst({
+        where: {
+          library_id: libraryId,
+          seat_number: String(seat_number),
+        },
+        select: {
+          id: true,
+          seat_number: true,
+        },
+      });
+
+      if (!targetSeat) {
+        return res.status(400).json({ error: "Seat not found" });
+      }
+
+      nextSeatId = targetSeat.id;
+      nextSeatNumber = targetSeat.seat_number;
+    }
+
+    const now = new Date();
+    const oldEndDate = membership.end_date;
+    const extendFromDate = dayjs(membership.end_date).isAfter(now)
+      ? membership.end_date
+      : now;
+    const newEndDate = dayjs(extendFromDate).add(renewalDays, "day").toDate();
+
+    // Check conflicts only for the newly booked period and ignore this membership itself.
+    const overlapStartDate = dayjs(membership.end_date).isAfter(now)
+      ? membership.end_date
+      : now;
+
+    const potentiallyConflicting = await prisma.memberships.findMany({
+      where: {
+        id: { not: membership.id },
+        library_id: libraryId,
+        seat_id: nextSeatId,
+        status: { in: ["active", "paid"] },
+        AND: [
+          { start_date: { lte: newEndDate } },
+          { end_date: { gte: overlapStartDate } },
+        ],
+      },
+      select: {
+        start_hour: true,
+        start_minute: true,
+        end_hour: true,
+        end_minute: true,
+        crosses_midnight: true,
+      },
+    });
+
+    const requestedStartMinutes = nextStartHour * 60 + nextStartMinute;
+    const requestedEndMinutes = nextEndHour * 60 + nextEndMinute;
+
+    const hasConflict = potentiallyConflicting.some((existing) =>
+      hasTimeOverlap(
+        requestedStartMinutes,
+        requestedEndMinutes,
+        { hour: existing.start_hour, minute: existing.start_minute },
+        { hour: existing.end_hour, minute: existing.end_minute },
+        existing.crosses_midnight,
+      ),
+    );
+
+    if (hasConflict) {
+      return res
+        .status(403)
+        .json({ error: "This seat number is not available" });
+    }
+
+    const paymentAmount = new Prisma.Decimal(paymentAmountNumber);
+    const renewalFee = new Prisma.Decimal(renewalFeeNumber);
+    const currentPaidAmount = new Prisma.Decimal(membership.paid_amount);
+    const currentTotalFee = new Prisma.Decimal(membership.total_fee);
+
+    const updatedPaidAmount = currentPaidAmount.plus(paymentAmount);
+    const updatedTotalFee = currentTotalFee.plus(renewalFee);
+    const updatedStatus = deriveMembershipStatus(
+      updatedTotalFee,
+      updatedPaidAmount,
+    );
+    const pendingAmount = updatedTotalFee.minus(updatedPaidAmount);
+
+    const receiptNumber = await generateReceiptNumber();
+
+    const [payment] = await prisma.$transaction([
+      prisma.payments.create({
+        data: {
+          amount: paymentAmount,
+          payment_mode: payment_method,
+          payment_date: new Date(),
+          receipt_number: receiptNumber,
+          notes: notes ?? null,
+          library: { connect: { id: libraryId } },
+          membership: { connect: { id: membership.id } },
+        },
+      }),
+      prisma.memberships.update({
+        where: { id: membership.id },
+        data: {
+          end_date: newEndDate,
+          total_fee: updatedTotalFee,
+          paid_amount: updatedPaidAmount,
+          status: updatedStatus,
+          seat: { connect: { id: nextSeatId } },
+          start_hour: nextStartHour,
+          start_minute: nextStartMinute,
+          end_hour: nextEndHour,
+          end_minute: nextEndMinute,
+          crosses_midnight: nextCrossesMidnight,
+        },
+      }),
+      prisma.students.update({
+        where: { id: student_id },
+        data: { isActive: true },
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Membership renewed successfully",
+      receipt: {
+        receipt_number: receiptNumber,
+        student_name: membership.student.name,
+        seat_number: nextSeatNumber,
+        renewal_days: renewalDays,
+        old_end_date: oldEndDate,
+        new_end_date: newEndDate,
+        renewal_fee: renewalFee.toNumber(),
+        amount_paid_now: paymentAmount.toNumber(),
+        total_paid_so_far: updatedPaidAmount.toNumber(),
+        pending_amount: pendingAmount.toNumber(),
+        payment_mode: payment_method,
+        payment_date: payment.payment_date,
+        membership_status: updatedStatus,
+        timing: `${formatTime(nextStartHour, nextStartMinute)} - ${formatTime(nextEndHour, nextEndMinute)}`,
+      },
+    });
+  } catch (error) {
+    console.error("Error renewing membership", error);
+    return res.status(500).json({ error: "Failed to renew membership" });
+  }
+};
+
 export const deleteStudent = async (req: Request, res: Response) => {
   const user = (req as any).user;
   if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
@@ -431,6 +705,111 @@ export const deleteStudent = async (req: Request, res: Response) => {
 
     return res.status(500).json({
       error: "Error deleting student",
+    });
+  }
+};
+
+export const updateStudentDetails = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user?.id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const studentId = Number(req.params.studentId);
+    const libraryId = Number(req.params.libraryId);
+
+    if (isNaN(studentId)) {
+      return res.status(400).json({ error: "Invalid student id" });
+    }
+    if (isNaN(libraryId)) {
+      return res.status(400).json({ error: "Invalid library id" });
+    }
+
+    const { name, phone } = (req.body || {}) as UpdateStudentBody;
+
+    if (name === undefined && phone === undefined) {
+      return res.status(400).json({
+        error: "At least one field is required: name or phone",
+      });
+    }
+
+    const updateData: Prisma.StudentsUpdateInput = {};
+
+    if (name !== undefined) {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        return res.status(400).json({ error: "Name cannot be empty" });
+      }
+      updateData.name = trimmedName;
+    }
+
+    if (phone !== undefined) {
+      const trimmedPhone = phone.trim();
+      if (!trimmedPhone) {
+        return res.status(400).json({ error: "Phone cannot be empty" });
+      }
+      updateData.phone = trimmedPhone;
+    }
+
+    const studentExists = await prisma.students.findFirst({
+      where: {
+        id: studentId,
+        library_id: libraryId,
+      },
+      select: { id: true },
+    });
+
+    if (!studentExists) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    const updatedStudent = await prisma.students.update({
+      where: { id: studentId },
+      data: updateData,
+      include: {
+        memberships: {
+          where: {
+            status: { in: ["active", "paid"] },
+          },
+          include: {
+            seat: true,
+          },
+          orderBy: {
+            created_at: "desc",
+          },
+          take: 1,
+        },
+      },
+    });
+
+    const currentMembership = updatedStudent.memberships[0] || null;
+
+    return res.status(200).json({
+      success: true,
+      message: "Student details updated successfully",
+      student: {
+        studentId: updatedStudent.id,
+        name: updatedStudent.name,
+        phone: updatedStudent.phone,
+        isActive: updatedStudent.isActive,
+        createdAt: updatedStudent.created_at,
+        updatedAt: updatedStudent.updated_at,
+        currentMembership: currentMembership
+          ? {
+              membershipId: currentMembership.id,
+              seatNumber: currentMembership.seat.seat_number,
+              status: currentMembership.status,
+              endDate: currentMembership.end_date,
+              timing: `${formatTime(currentMembership.start_hour, currentMembership.start_minute)} - ${formatTime(currentMembership.end_hour, currentMembership.end_minute)}`,
+            }
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating student details:", error);
+    return res.status(500).json({
+      error: "Failed to update student details",
     });
   }
 };
@@ -553,95 +932,6 @@ export const getAllStudents = async (req: Request, res: Response) => {
   }
 };
 
-export const markStudentFeesAsPaid = async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const {
-      studentId,
-      libraryId,
-      amount,
-      datePaidOn,
-      membershipId,
-      paymentMode = "CASH",
-    } = req.body;
-
-    if (!user?.id) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (!libraryId) {
-      return res.status(400).json({ error: "Library ID is required" });
-    }
-    if (!studentId) {
-      return res.status(400).json({ error: "Student ID is required" });
-    }
-    if (!membershipId) {
-      return res.status(400).json({ error: "Membership ID is required" });
-    }
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: "Valid amount is required" });
-    }
-    if (!datePaidOn || !dayjs(datePaidOn).isValid()) {
-      return res.status(400).json({ error: "Valid payment date is required" });
-    }
-
-    const membership = await prisma.memberships.findFirst({
-      where: {
-        id: membershipId,
-        student_id: studentId,
-        library_id: libraryId,
-      },
-    });
-
-    if (!membership) {
-      return res.status(404).json({
-        error: "Membership not found for this student and library",
-      });
-    }
-
-    const MEMBERSHIP_DURATION_DAYS = 30;
-    const newEndDate = dayjs(datePaidOn)
-      .add(MEMBERSHIP_DURATION_DAYS, "day")
-      .toDate();
-
-    // Use transaction
-    const result = await prisma.$transaction(async (tx) => {
-      const updatedMembership = await tx.memberships.update({
-        where: {
-          id: membershipId,
-        },
-        data: {
-          end_date: newEndDate,
-          status: "ACTIVE",
-        },
-      });
-
-      // Create payment record
-      const payment = await tx.payments.create({
-        data: {
-          library_id: libraryId,
-          membership_id: membershipId,
-          amount: amount,
-          payment_date: new Date(datePaidOn),
-          payment_mode: paymentMode,
-        },
-      });
-
-      return { membership: updatedMembership, payment };
-    });
-
-    return res.status(200).json({
-      message: "Payment recorded and membership extended successfully",
-      data: result,
-    });
-  } catch (error) {
-    console.error("Error marking student fees as paid:", error);
-    return res.status(500).json({
-      error: "An error occurred while processing the payment",
-    });
-  }
-};
-
 export const listOverdueStudents = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -724,6 +1014,115 @@ export const listExpiringSoonStudents = async (req: Request, res: Response) => {
     console.error("Error listing expiring students", error);
     return res.status(500).json({
       error: "Error listing expiring soon students",
+    });
+  }
+};
+
+export const getStudentDetails = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user?.id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const studentId = Number(req.params.studentId);
+    const libraryId = Number(req.params.libraryId);
+
+    if (isNaN(studentId)) {
+      return res.status(400).json({ error: "Invalid student id" });
+    }
+    if (isNaN(libraryId)) {
+      return res.status(400).json({ error: "Invalid library id" });
+    }
+
+    const student = await prisma.students.findFirst({
+      where: {
+        id: studentId,
+        library_id: libraryId,
+      },
+      include: {
+        memberships: {
+          include: {
+            seat: {
+              select: {
+                id: true,
+                seat_number: true,
+                has_locker: true,
+              },
+            },
+            payments: {
+              orderBy: {
+                payment_date: "desc",
+              },
+            },
+          },
+          orderBy: {
+            created_at: "desc",
+          },
+        },
+      },
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    const formattedMemberships = student.memberships.map((membership) => {
+      const totalFee = new Prisma.Decimal(membership.total_fee);
+      const paidAmount = new Prisma.Decimal(membership.paid_amount);
+      const pendingAmount = totalFee.minus(paidAmount);
+
+      return {
+        membershipId: membership.id,
+        startDate: membership.start_date,
+        endDate: membership.end_date,
+        status: membership.status,
+        totalFee: totalFee.toNumber(),
+        paidAmount: paidAmount.toNumber(),
+        pendingAmount: pendingAmount.toNumber(),
+        timing: `${formatTime(
+          membership.start_hour,
+          membership.start_minute,
+        )} - ${formatTime(membership.end_hour, membership.end_minute)}`,
+        seat: {
+          seatId: membership.seat.id,
+          seatNumber: membership.seat.seat_number,
+          hasLocker: membership.seat.has_locker,
+        },
+        daysRemaining: Math.max(
+          0,
+          Math.ceil(
+            (new Date(membership.end_date).getTime() - Date.now()) /
+              (1000 * 60 * 60 * 24),
+          ),
+        ),
+        payments: membership.payments.map((payment) => ({
+          paymentId: payment.id,
+          amount: new Prisma.Decimal(payment.amount).toNumber(),
+          paymentDate: payment.payment_date,
+          paymentMode: payment.payment_mode,
+          receiptNumber: payment.receipt_number,
+          notes: payment.notes,
+        })),
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      student: {
+        studentId: student.id,
+        name: student.name,
+        phone: student.phone,
+        isActive: student.isActive,
+        createdAt: student.created_at,
+        updatedAt: student.updated_at,
+        memberships: formattedMemberships,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching student details:", error);
+    return res.status(500).json({
+      error: "Failed to fetch student details",
     });
   }
 };
