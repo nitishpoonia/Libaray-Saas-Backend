@@ -1,7 +1,6 @@
 // src/modules/library/controller.ts
 import { Request, Response } from "express";
-import { prisma } from "../../utils/prisma.js";
-import { error, log } from "console";
+import { prisma } from "../../lib/prisma";
 
 interface CreateLibraryBody {
   name: string;
@@ -11,11 +10,10 @@ interface CreateLibraryBody {
 
 export const createLibrary = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const { name, address, seats } = req.body as CreateLibraryBody;
-    console.log("Create library request body:", req.body, user);
     if (!name || !address || seats === undefined) { 
       return res
         .status(400)
@@ -54,7 +52,7 @@ export const createLibrary = async (req: Request, res: Response) => {
 
 export const getLibraries = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const libraries = await prisma.library.findMany({
@@ -77,7 +75,7 @@ export const getLibraries = async (req: Request, res: Response) => {
 
 export const getLibraryOverview = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const libraryId = Number(req.params.id);
@@ -122,7 +120,6 @@ export const getLibraryOverview = async (req: Request, res: Response) => {
     const paymentsTotal = paymentsSum._sum.amount
       ? Number(paymentsSum._sum.amount)
       : 0;
-    console.log("Seats", seatsCount);
     return res.status(200).json({
       libraryId: library.id,
       status: library.status,
@@ -146,7 +143,7 @@ export const getLibraryOverview = async (req: Request, res: Response) => {
 
 export const updateLibrary = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const { libraryName, seats, address } = req.body;

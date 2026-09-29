@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { prisma } from "../../utils/prisma";
-import { Prisma } from "../../../generated/prisma";
+import { prisma } from "../../lib/prisma";
+import { Prisma } from "../../generated/prisma/client";
 import {
   formatTime,
   hasTimeOverlap,
@@ -59,7 +59,7 @@ const deriveMembershipStatus = (
 
 export const createStudent = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
     if (!req.body)
       return res.status(400).json({ error: "Request body is required" });
@@ -75,12 +75,10 @@ export const createStudent = async (req: Request, res: Response) => {
       amount_paid: amountPaid,
       library_id,
     } = req.body as CreateStudentBody;
-    console.log("Create student request body:", req.body);
 
     const total_fee = Number(totalFee);
     const amount_paid = Number(amountPaid);
 
-    console.log(typeof total_fee);
 
     // ── Validation ────────────────────────────────────────────────────────────
     if (!name) return res.status(400).json({ error: "Name is required" });
@@ -285,7 +283,7 @@ export const createStudent = async (req: Request, res: Response) => {
 
 export const addPayment = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const { membership_id, library_id, amount, payment_method, notes } =
@@ -388,7 +386,7 @@ export const addPayment = async (req: Request, res: Response) => {
 
 export const renewMembership = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const libraryId = Number(req.params.libraryId);
@@ -645,7 +643,7 @@ export const renewMembership = async (req: Request, res: Response) => {
 };
 
 export const deleteStudent = async (req: Request, res: Response) => {
-  const user = (req as any).user;
+  const user = req.user;
   if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
   if (!req.body) {
     return res.status(400).json({ error: "Request body is required" });
@@ -701,7 +699,6 @@ export const deleteStudent = async (req: Request, res: Response) => {
       message: "Student removed and seat released",
     });
   } catch (error) {
-    console.log("Error deleting student", error);
 
     return res.status(500).json({
       error: "Error deleting student",
@@ -711,7 +708,7 @@ export const deleteStudent = async (req: Request, res: Response) => {
 
 export const updateStudentDetails = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -816,7 +813,7 @@ export const updateStudentDetails = async (req: Request, res: Response) => {
 
 export const getAllStudents = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -835,7 +832,6 @@ export const getAllStudents = async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
     const { search } = req.query;
 
-    console.log(req.query);
     const where: any = {
       library_id: libraryId,
       ...(search && {
@@ -934,7 +930,7 @@ export const getAllStudents = async (req: Request, res: Response) => {
 
 export const listOverdueStudents = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?.id;
 
     const libraryId = await prisma.library.findUnique({
@@ -945,7 +941,6 @@ export const listOverdueStudents = async (req: Request, res: Response) => {
         id: true,
       },
     });
-    console.log("lbary id", libraryId);
     if (!libraryId)
       return res.status(400).json({ error: "No library exists for this user" });
     const today = dayjs().startOf("day").toDate();
@@ -977,7 +972,7 @@ export const listOverdueStudents = async (req: Request, res: Response) => {
 
 export const listExpiringSoonStudents = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?.id;
 
     const libraryId = await prisma.library.findUnique({
@@ -1020,7 +1015,7 @@ export const listExpiringSoonStudents = async (req: Request, res: Response) => {
 
 export const getStudentDetails = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) {
       return res.status(401).json({ error: "Unauthorized" });
     }

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { prisma } from "../utils/prisma";
+import { prisma } from "../lib/prisma";
 
 export const subscriptionCheck = async (
   req: Request,
@@ -7,10 +7,9 @@ export const subscriptionCheck = async (
   next: NextFunction,
 ) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
-    console.log("Subscription middleware hit:", req.method, req.originalUrl);
 
     const owner = await prisma.libraryOwner.findUnique({
       where: { id: user.id },
@@ -24,7 +23,6 @@ export const subscriptionCheck = async (
       },
     });
 
-    console.log("Library owner", owner);
 
     // No library found at all
     if (!owner?.library) {

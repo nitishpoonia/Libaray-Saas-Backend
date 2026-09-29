@@ -1,11 +1,10 @@
 import { Request, Response } from "express";
-import { prisma } from "../../utils/prisma";
-import { Prisma } from "../../../generated/prisma";
-import { error } from "console";
+import { prisma } from "../../lib/prisma";
+import { Prisma } from "../../generated/prisma/client";
 
 export const createExpense = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id)
       return res.status(401).json({
         error: "Unauthorized",
@@ -74,7 +73,7 @@ export const createExpense = async (req: Request, res: Response) => {
 
 export const listAllExpenses = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id)
       return res.status(401).json({
         error: "Unauthorized",
@@ -121,7 +120,6 @@ export const listAllExpenses = async (req: Request, res: Response) => {
       prisma.expenses.count({
         where,
       }),
-      ,
     ]);
 
     return res.status(200).json({

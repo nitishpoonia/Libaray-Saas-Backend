@@ -1,12 +1,12 @@
 import { Response, Request } from "express";
-import { prisma } from "../../utils/prisma";
+import { prisma } from "../../lib/prisma";
 import { parseTime } from "../../helpers/basicHelper";
 import dayjs from "dayjs";
 import { hasTimeOverlap } from "../../utils/timeUtils";
 
 export const getAllAvailableSeats = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const body = (req as any).body;
 
     if (!user?.id) {
@@ -34,7 +34,6 @@ export const getAllAvailableSeats = async (req: Request, res: Response) => {
         error: "startTime, endTime, and bookedFor are required",
       });
     }
-    console.log("Start time", startTime);
 
     // Parse time strings using your existing helper
     const parsedStartTime = parseTime(startTime); // Returns Date object
@@ -119,7 +118,6 @@ export const getAllAvailableSeats = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.log("Error getting available seats", error);
     return res.status(500).json({
       error: "Error getting available seats",
     });

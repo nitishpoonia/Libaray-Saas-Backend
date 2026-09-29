@@ -1,10 +1,9 @@
+import { env } from "../../config/env";
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { prisma } from "../../utils/prisma.js";
-import dotenv from "dotenv";
-import { validateIdentifier } from "../../helpers/basicHelper.js";
-dotenv.config();
+import { prisma } from "../../lib/prisma";
+import { validateIdentifier } from "../../helpers/basicHelper";
 interface LoginBody {
   identifier: string;
   password: string;
@@ -17,7 +16,6 @@ export const loginLibraryOwner = async (
   try {
     const body = req.body ?? {};
     const { identifier, password } = body;
-    console.log("boyd", body);
 
     if (!identifier || !password) {
       return res
@@ -57,7 +55,7 @@ export const loginLibraryOwner = async (
         id: user.id,
         email: user.email,
       },
-      process.env.JWT_SECRET!,
+      env.JWT_SECRET,
       { expiresIn: "7d" },
     );
 

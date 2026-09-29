@@ -1,11 +1,10 @@
-import { prisma } from "../../utils/prisma.js";
+import { env } from "../../config/env";
+import { prisma } from "../../lib/prisma";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import dotenv from "dotenv";
 import { Request, Response } from "express";
-import { validateIdentifier } from "../../helpers/basicHelper.js";
+import { validateIdentifier } from "../../helpers/basicHelper";
 
-dotenv.config();
 
 interface SignupBody {
   name: string;
@@ -61,13 +60,6 @@ export const createLibraryOwner = async (
         phone: kind === "phone" ? `+91${identifier}` : null,
         password_hash,
         joined_date: new Date(),
-        // library: {
-        //   create: {
-        //     status: "trial",
-        //     subscription_start: new Date(),
-        //     subscription_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        //   },
-        // },
       },
       select: {
         id: true,
@@ -78,13 +70,12 @@ export const createLibraryOwner = async (
         created_at: true,
       },
     });
-    console.log("Owner created:", owner);
 
     const token = jwt.sign(
       {
         id: owner.id,
       },
-      process.env.JWT_SECRET!,
+      env.JWT_SECRET,
       { expiresIn: "7d" },
     );
 

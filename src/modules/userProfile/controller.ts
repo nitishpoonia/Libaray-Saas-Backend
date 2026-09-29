@@ -1,19 +1,12 @@
 import { Request, Response } from "express";
-import { prisma } from "../../utils/prisma";
+import { prisma } from "../../lib/prisma";
 import bcrypt from "bcrypt";
 
 import { isEmail, isPhone } from "../../helpers/basicHelper";
 
-interface UserProfile {
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-}
-
 export const getUserProfile = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     const userId = user?.id;
 
     if (!userId) {
@@ -50,7 +43,7 @@ export const getUserProfile = async (req: Request, res: Response) => {
 
 export const updateUserProfile = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -106,7 +99,7 @@ export const updateUserProfile = async (req: Request, res: Response) => {
 
 export const changePassword = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({

@@ -1,12 +1,11 @@
 import { Request, Response } from "express";
-import { prisma } from "../../utils/prisma.js";
+import { prisma } from "../../lib/prisma";
 import dayjs from "dayjs";
 
 export const getDashboard = async (req: Request, res: Response) => {
-  console.log("**********************************");
 
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const libraryId = Number(req.params.libraryId);
@@ -59,7 +58,6 @@ export const getDashboard = async (req: Request, res: Response) => {
       },
     });
     const totalExpenses = expensesSum._sum.amount ?? 0;
-    console.log("Total Expense", expensesSum);
 
     const revenueSum = await prisma.payments.aggregate({
       where: {

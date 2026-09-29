@@ -1,12 +1,11 @@
 import { Request, Response } from "express";
 
-export const logoutLibraryOwner = async (req: Request, res: Response) => {
+export const logoutLibraryOwner = async (_req: Request, res: Response) => {
   try {
     // For JWT-based auth, the token is stored on the client side
     // The actual logout happens on the client by removing the token
     // This endpoint can be used for logging purposes or future token blacklisting
 
-    const user = (req as any).user;
 
     // You can add additional logout logic here such as:
     // - Logging the logout event

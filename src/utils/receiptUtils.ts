@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { prisma } from "./prisma";
+import { prisma } from "../lib/prisma";
 
 /**
  * Generates a unique receipt number in format: RCP-YYYYMMDD-XXXX
