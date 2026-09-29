@@ -29,6 +29,12 @@ const envSchema = z
     // Local-only: delay every request to feel real-world latency. Refused in production below.
     SIMULATE_LATENCY_MS: z.coerce.number().int().min(0).default(0),
 
+    // How students get overdue notices. The provider is plugged in once an SMS / WhatsApp
+    // account (and its DLT-registered templates) exists; until then notices are logged
+    // and recorded as SKIPPED.
+    STUDENT_NOTICE_CHANNEL: z.enum(["SMS", "WHATSAPP"]).default("SMS"),
+    TEXT_PROVIDER: z.enum(["none"]).default("none"),
+
     // Firebase service account JSON as a single-line string. Optional: without it,
     // push notifications are skipped and logged instead.
     FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
