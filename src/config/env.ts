@@ -17,6 +17,11 @@ const envSchema = z
 
     // At least 32 characters so the signing key can't be brute-forced.
     JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+    // Access tokens are short-lived; the app renews them with its refresh token.
+    ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(15),
+    REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+    // Free trial for a new owner account.
+    TRIAL_DAYS: z.coerce.number().int().positive().default(14),
 
     // Number of proxies in front of the app. Render has one.
     TRUST_PROXY: z.coerce.number().int().min(0).default(0),

@@ -8,9 +8,18 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: library_saas_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      # prisma.config.ts needs a URL even for `prisma generate`; tests use their own.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/library_saas_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/library_saas_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,5 +28,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npx prisma migrate deploy
       - run: npm test
       - run: npx tsup

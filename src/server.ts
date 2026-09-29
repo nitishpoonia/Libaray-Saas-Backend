@@ -1,12 +1,10 @@
 import { env } from "./config/env";
 import { createApp } from "./app";
-import { startMembershipExpiryJob } from "./jobs/membershipExpiry";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
 
 const server = createApp().listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, "Server started");
-  startMembershipExpiryJob();
 });
 
 // Render sends SIGTERM on every deploy. Finish in-flight requests, then close the DB pool.
