@@ -74,6 +74,7 @@ Auth uses a 15-minute access token (`Authorization: Bearer …`) and a 30-day re
 | Payments | `POST …/memberships/:membershipId/payments`, `GET …/payments`, `GET …/payments/:paymentId/receipt`, `POST …/payments/:paymentId/void` |
 | Expenses | `GET/POST …/expenses`, `PATCH/DELETE …/expenses/:expenseId` |
 | Staff | `GET/POST …/staff`, `PATCH/DELETE …/staff/:staffId` |
+| Billing (owner) | `GET /billing`, `POST /billing/orders`, `POST /billing/verify`, `POST /billing/webhook` (Razorpay) |
 
 ### Roles
 
@@ -86,6 +87,18 @@ Auth uses a 15-minute access token (`Authorization: Bearer …`) and a 30-day re
 ### Membership lifecycle
 
 `ACTIVE` → period ends without renewal → `OVERDUE` (seat held for the grace period, 7 days by default) → `CANCELLED` on day 7, seat released. A renewal creates a new period linked to the old one, which becomes `COMPLETED`. Fees are tracked per period; a period's `paymentStatus` is `PAID` or `PENDING`.
+
+### Billing
+
+Prepaid plans for the whole owner account, priced by branch count: ₹999/month for the first branch plus ₹499 per extra branch (`PLAN_*_PAISE`). Plans are 1, 3 or 12 months; yearly is charged as 10.
+
+1. The app calls `POST /billing/orders` with a plan. The server works out the amount and creates a Razorpay order.
+2. The app opens Razorpay Checkout with the returned `orderId` and `keyId`.
+3. On success, the app sends the `razorpay_payment_id` and `razorpay_signature` to `POST /billing/verify`. Razorpay's `order.paid` webhook does the same in case the app closes before step 3; whichever arrives second changes nothing.
+
+A new plan starts when the current trial or plan ends. Branches are free during the trial. During a paid period, a new branch needs a `BRANCH_ADDON` order first (the extra-branch price for the days left); `POST /libraries` answers `402 BRANCH_PAYMENT_REQUIRED` with the amount. The daily job reminds owners 7, 3 and 1 days before their trial or plan ends, and marks ended ones `EXPIRED`.
+
+Set up in the Razorpay dashboard: API keys (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`) and a webhook to `https://<api>/v1/billing/webhook` for the `order.paid` event (`RAZORPAY_WEBHOOK_SECRET`).
 
 ## Code layout
 

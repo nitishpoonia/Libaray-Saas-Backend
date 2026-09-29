@@ -1,4 +1,5 @@
 import { forbidden } from "../../lib/errors";
+import { assertCanAddBranch } from "../billing/service";
 import { prisma } from "../../lib/prisma";
 import type { LibraryRole } from "../../types/express";
 
@@ -25,7 +26,10 @@ export async function listAccessibleLibraries(userId: number): Promise<LibrarySu
   ];
 }
 
-/** New branch with seats labelled 1..seatCount. Only an organization owner can do this. */
+/**
+ * New branch with seats labelled 1..seatCount. Only an organization owner can do this,
+ * and during a paid period only after paying for the extra branch.
+ */
 export async function createLibrary(
   userId: number,
   input: { name: string; address: string; seatCount: number; gracePeriodDays?: number },
@@ -34,6 +38,7 @@ export async function createLibrary(
   if (!org) throw forbidden("Only an owner account can create a branch", "NOT_AN_OWNER");
 
   return prisma.$transaction(async (tx) => {
+    await assertCanAddBranch(tx, org.id);
     const library = await tx.library.create({
       data: {
         organizationId: org.id,

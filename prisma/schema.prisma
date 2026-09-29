@@ -77,6 +77,26 @@ enum NotificationType {
   MEMBERSHIP_CANCELLED
   /// One push per branch per day to the owner and managers.
   DAILY_DIGEST
+  /// Owner reminder before the subscription ends.
+  SUBSCRIPTION_REMINDER
+}
+
+enum BillingPlan {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum BillingKind {
+  /// Pays for a period of the whole account.
+  PLAN
+  /// Pays for one more branch until the current period ends.
+  BRANCH_ADDON
+}
+
+enum BillingPaymentStatus {
+  CREATED
+  PAID
 }
 
 enum NotificationStatus {
@@ -146,10 +166,37 @@ model Organization {
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
 
-  owner     User      @relation(fields: [ownerId], references: [id])
-  libraries Library[]
+  owner           User                  @relation(fields: [ownerId], references: [id])
+  libraries       Library[]
+  billingPayments SubscriptionPayment[]
 
   @@map("organizations")
+}
+
+/// One Razorpay order for the owner's subscription. Amounts are in paise, as Razorpay uses.
+model SubscriptionPayment {
+  id                Int                  @id @default(autoincrement())
+  organizationId    Int                  @map("organization_id")
+  kind              BillingKind
+  plan              BillingPlan?
+  /// Months of service this payment buys (PLAN only).
+  months            Int?
+  /// Branches billed by this payment (PLAN: total branches; BRANCH_ADDON: 1).
+  branches          Int
+  amountPaise       Int                  @map("amount_paise")
+  status            BillingPaymentStatus @default(CREATED)
+  razorpayOrderId   String               @unique @map("razorpay_order_id")
+  razorpayPaymentId String?              @unique @map("razorpay_payment_id")
+  /// Service period this payment covers, set when it's paid.
+  periodStart       DateTime?            @map("period_start")
+  periodEnd         DateTime?            @map("period_end")
+  paidAt            DateTime?            @map("paid_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@map("subscription_payments")
 }
 
 /// A branch.

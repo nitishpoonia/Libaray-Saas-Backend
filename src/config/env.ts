@@ -35,6 +35,14 @@ const envSchema = z
     STUDENT_NOTICE_CHANNEL: z.enum(["SMS", "WHATSAPP"]).default("SMS"),
     TEXT_PROVIDER: z.enum(["none"]).default("none"),
 
+    // Razorpay (owner subscriptions). Without keys, billing endpoints answer 503.
+    RAZORPAY_KEY_ID: z.string().optional(),
+    RAZORPAY_KEY_SECRET: z.string().optional(),
+    RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+    // Prices in paise (₹999 = 99900). Yearly is billed as 10 months.
+    PLAN_BASE_MONTHLY_PAISE: z.coerce.number().int().positive().default(99_900),
+    PLAN_EXTRA_BRANCH_MONTHLY_PAISE: z.coerce.number().int().positive().default(49_900),
+
     // Firebase service account JSON as a single-line string. Optional: without it,
     // push notifications are skipped and logged instead.
     FIREBASE_SERVICE_ACCOUNT: z.string().optional(),

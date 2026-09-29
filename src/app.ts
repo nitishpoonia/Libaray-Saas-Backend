@@ -9,6 +9,7 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { generalLimiter } from "./middleware/rateLimiters";
 import { simulateLatency } from "./middleware/simulateLatency";
 import authRoutes from "./modules/auth/routes";
+import { billingRouter, billingWebhook } from "./modules/billing/routes";
 import dashboardRoutes from "./modules/dashboard/routes";
 import expenseRoutes from "./modules/expenses/routes";
 import { libraryAccess, librariesRouter, libraryRouter } from "./modules/libraries/routes";
@@ -42,6 +43,9 @@ export function createApp() {
     }),
   );
 
+  // Razorpay signs the raw body, so its webhook is mounted before the JSON parser.
+  app.use("/v1/billing/webhook", billingWebhook);
+
   app.use(express.json({ limit: "100kb" }));
 
   if (env.SIMULATE_LATENCY_MS > 0) {
@@ -73,6 +77,7 @@ function apiV1() {
 
   v1.use("/auth", authRoutes);
   v1.use("/me", meRoutes);
+  v1.use("/billing", billingRouter);
   v1.use("/libraries", authMiddleware, librariesRouter);
 
   // Everything inside one branch goes through the access check first (REVIEW S1).

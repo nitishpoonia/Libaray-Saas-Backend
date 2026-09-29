@@ -247,7 +247,7 @@ These answers shape several fixes below.
 
 - [x] **D7 · P2 · Subscription lives on `Library`.**
   With branches, it's unclear whether an owner pays per branch or per account. `plan_type` is never used, and nothing records how or when an owner paid you. See Q3.
-  **Status:** fixed in PR `feat/domain-rewrite`: subscription on Organization with `billedBranches`; Razorpay fields ready.
+  **Status:** fixed in `feat/domain-rewrite` (subscription on Organization) and `feat/billing-razorpay` (prepaid Razorpay plans priced by branch count, branch add-ons, expiry and reminders).
 
 - [x] **D8 · P2 · The push token column has the wrong name.**
   `expo_push_token` holds a Firebase (FCM) token, and `expo-server-sdk` is installed but unused. One token per owner also means only the last device that logged in gets notifications.
