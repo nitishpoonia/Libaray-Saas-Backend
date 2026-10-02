@@ -523,3 +523,11 @@ Found while reviewing the PR stack, with each bug reproduced against a real Post
 
 - [x] **R8 · P2 · Text sender took free text; Indian providers need template id + values.**
   **Status:** fixed in PR `feat/daily-job-notifications`: `TextSender.send(phone, { template, vars, text })`. The templates are written with DLT `{#var#}` placeholders, ready to register. The overdue notice is two templates (with and without pending fees).
+
+- [x] **R13 · P2 · Staff could see every payment in the branch.**
+  Problem: the dashboard hid finance from STAFF, but `GET /payments` listed every payment with amounts.
+  **Decision:** staff see only payments they recorded (to re-share receipts); managers and the owner see all.
+  **Status:** fixed in PR `feat/domain-rewrite`: the payments list and receipt routes filter by `recordedById` for STAFF. Tested.
+
+- [x] **R14 · Decision · Renewing after overdue.**
+  **Decision:** the new period starts the day after the old one ended, so the student pays for the overdue days (the seat was held for them). This is how `renew` already works; no change.
