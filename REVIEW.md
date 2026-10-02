@@ -532,10 +532,11 @@ Found while reviewing the PR stack, with each bug reproduced against a real Post
 - [x] **R10 · P2 · Webhook secret could be missing while keys were set.**
   **Status:** fixed in PR `feat/billing-razorpay`: the app refuses to start with `RAZORPAY_KEY_ID` but no `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET`.
 
-- [ ] **R11 · P1 · A plan paid late can cover fewer branches than exist.**
+- [x] **R11 · P1 · A plan paid late can cover fewer branches than exist.**
   Where: `billing/service.ts` `createOrder` / `markOrderPaid`.
   Problem: the plan price uses the branch count when the order is created. A UPI request can be approved hours later, after more branches were added during the trial, so the plan is paid for fewer branches than are running.
-  **Status:** partly fixed in PR `feat/billing-razorpay`: `GET /billing` returns `unpaidBranches` (and the add-on price), and the mismatch is logged. Each can be paid with a `BRANCH_ADDON`. Open: whether unpaid branches should be blocked from making changes until paid (product decision).
+  **Decision:** uncovered branches are read-only until paid for.
+  **Status:** fixed in PR `feat/billing-razorpay`: branches are covered oldest first up to `billedBranches`; writes on the rest answer `402 BRANCH_PAYMENT_REQUIRED` with the add-on price. `GET /billing` returns `unpaidBranches`, the dashboard returns `subscription.branchCovered`, and each `BRANCH_ADDON` covers the next branch. Tested.
 
 - [ ] **R12 · P3 · Branch add-on bought right after a plan also charges for remaining trial days.**
   Where: `billing/pricing.ts` `branchAddonPrice` uses days until `currentPeriodEnd`, and a plan bought during the trial runs from the trial's end, so the remaining trial days are included in the add-on price even though branches are free during the trial.

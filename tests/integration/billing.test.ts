@@ -162,15 +162,15 @@ describe("billing", () => {
     expect(res.status).toBe(200);
   });
 
-  it("shows branches added after checkout opened as unpaid", async () => {
+  it("makes branches a late plan didn't cover read-only until paid", async () => {
     const owner = await signupOwner();
-    await createLibrary(owner);
+    const first = await createLibrary(owner);
     // Checkout opens for 1 branch (e.g. a UPI request the owner approves hours later)...
     const order = await api().post("/v1/billing/orders").set(auth(owner.token)).send({ kind: "PLAN", plan: "MONTHLY" });
     expect(order.body.data.amountPaise).toBe(99_900);
     // ...meanwhile, still in the trial, two more branches are added.
-    await createLibrary(owner);
-    await createLibrary(owner);
+    const second = await createLibrary(owner);
+    const third = await createLibrary(owner);
     const verify = await api()
       .post("/v1/billing/verify")
       .set(auth(owner.token))
@@ -178,11 +178,32 @@ describe("billing", () => {
     expect(verify.status).toBe(200);
     expect(verify.body.data.billedBranches).toBe(1);
     expect(verify.body.data.unpaidBranches).toBe(2);
-    expect(verify.body.data.branchAddon.amountPaise).toBeGreaterThan(0);
 
+    const addSeat = (libId: number) =>
+      api().post(`/v1/libraries/${libId}/seats`).set(auth(owner.token)).send({ count: 1 });
+    const dashboard = (libId: number) =>
+      api().get(`/v1/libraries/${libId}/dashboard`).set(auth(owner.token));
+
+    // The oldest branch is covered; the two newer ones refuse changes but stay readable.
+    expect((await addSeat(first.id)).status).toBe(201);
+    const blocked = await addSeat(third.id);
+    expect(blocked.status).toBe(402);
+    expect(blocked.body.error.code).toBe("BRANCH_PAYMENT_REQUIRED");
+    expect(blocked.body.error.details.amountPaise).toBeGreaterThan(0);
+    const dash = await dashboard(third.id);
+    expect(dash.status).toBe(200);
+    expect(dash.body.data.subscription.branchCovered).toBe(false);
+    expect(dash.body.data.subscription.usable).toBe(false);
+
+    // Each add-on covers the next branch, oldest first.
     await buy(owner.token, { kind: "BRANCH_ADDON" }, "pay_2");
-    const after = await api().get("/v1/billing").set(auth(owner.token));
-    expect(after.body.data.unpaidBranches).toBe(1);
+    expect((await addSeat(second.id)).status).toBe(201);
+    expect((await addSeat(third.id)).status).toBe(402);
+    expect((await api().get("/v1/billing").set(auth(owner.token))).body.data.unpaidBranches).toBe(1);
+
+    await buy(owner.token, { kind: "BRANCH_ADDON" }, "pay_3");
+    expect((await addSeat(third.id)).status).toBe(201);
+    expect((await dashboard(third.id)).body.data.subscription.branchCovered).toBe(true);
   });
 
   it("charges for an extra branch during a paid period", async () => {

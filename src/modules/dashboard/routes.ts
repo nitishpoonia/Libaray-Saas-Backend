@@ -5,7 +5,7 @@ import { sendData } from "../../lib/http";
 import { money, toRupees } from "../../lib/money";
 import { prisma } from "../../lib/prisma";
 import { requireAccess } from "../../middleware/libraryAccess";
-import { isSubscriptionUsable } from "../../middleware/subscription";
+import { isBranchCovered, isSubscriptionUsable } from "../../middleware/subscription";
 import { syncLifecycle } from "../memberships/lifecycle";
 
 const query = z.object({
@@ -65,7 +65,7 @@ async function dashboard(req: Request, res: Response) {
     }),
     prisma.organization.findUniqueOrThrow({
       where: { id: library.organizationId },
-      select: { subscriptionStatus: true, trialEndsAt: true, currentPeriodEnd: true },
+      select: { subscriptionStatus: true, trialEndsAt: true, currentPeriodEnd: true, billedBranches: true },
     }),
   ]);
 
@@ -101,6 +101,8 @@ async function dashboard(req: Request, res: Response) {
   }
 
   const now = new Date();
+  // False for a branch the plan doesn't cover yet: the app shows "pay for this branch".
+  const branchCovered = await isBranchCovered(prisma, org, library, now);
   const endsAt = org.subscriptionStatus === "TRIALING" ? org.trialEndsAt : org.currentPeriodEnd;
 
   sendData(res, {
@@ -123,7 +125,8 @@ async function dashboard(req: Request, res: Response) {
     finance,
     subscription: {
       status: org.subscriptionStatus,
-      usable: isSubscriptionUsable(org, now),
+      usable: isSubscriptionUsable(org, now) && branchCovered,
+      branchCovered,
       endsAt,
       daysRemaining: endsAt
         ? Math.max(0, Math.ceil((endsAt.getTime() - now.getTime()) / 86_400_000))

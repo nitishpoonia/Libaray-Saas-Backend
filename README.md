@@ -105,7 +105,7 @@ Prepaid plans for the whole owner account, priced by branch count: ₹999/month 
 
 A new plan starts when the current trial or plan ends. Branches are free during the trial. During a paid period, a new branch needs a `BRANCH_ADDON` order first (the extra-branch price for the days left); `POST /libraries` answers `402 BRANCH_PAYMENT_REQUIRED` with the amount. The daily job reminds owners 7, 3 and 1 days before their trial or plan ends, and marks ended ones `EXPIRED`.
 
-A plan's price is fixed when its order is created. If branches are added before it's paid (a UPI request approved hours later, say), `GET /billing` shows them as `unpaidBranches`, and each needs a `BRANCH_ADDON`.
+A plan's price is fixed when its order is created. If branches are added before it's paid (a UPI request approved hours later, say), the plan covers branches oldest first up to what was paid for. The rest are read-only: changes answer `402 BRANCH_PAYMENT_REQUIRED` with the add-on price, the dashboard shows `subscription.branchCovered: false`, and `GET /billing` counts them as `unpaidBranches`. Each `BRANCH_ADDON` covers the next one.
 
 Set up in the Razorpay dashboard: API keys (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`) and a webhook to `https://<api>/v1/billing/webhook` for the `order.paid` event (`RAZORPAY_WEBHOOK_SECRET`). The app won't start with keys but no webhook secret. The webhook answers 500 if applying a payment fails, so Razorpay retries it.
 

@@ -1,3 +1,5 @@
+import { env } from "../../config/env";
+
 /**
  * Prepaid plans for the whole owner account, priced by branch count.
  * All amounts are in paise (Razorpay's unit): 99_900 = ₹999.
@@ -16,6 +18,12 @@ export const PLANS: Record<Plan, { months: number; billedMonths: number }> = {
 };
 
 export type Prices = { baseMonthly: number; extraBranchMonthly: number };
+
+/** The prices set through PLAN_*_PAISE environment variables. */
+export const configuredPrices = (): Prices => ({
+  baseMonthly: env.PLAN_BASE_MONTHLY_PAISE,
+  extraBranchMonthly: env.PLAN_EXTRA_BRANCH_MONTHLY_PAISE,
+});
 
 export function monthlyPrice(branches: number, prices: Prices): number {
   return prices.baseMonthly + prices.extraBranchMonthly * Math.max(0, branches - 1);

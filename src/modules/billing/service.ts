@@ -1,17 +1,13 @@
 import dayjs from "dayjs";
-import { env } from "../../config/env";
 import { AppError, badRequest, conflict, forbidden, notFound } from "../../lib/errors";
 import type { Db } from "../../lib/db";
 import { logger } from "../../lib/logger";
 import { prisma } from "../../lib/prisma";
-import { isSubscriptionUsable } from "../../middleware/subscription";
-import { branchAddonPrice, PLANS, planPrice, type Plan } from "./pricing";
+import { isInPaidPeriod, isSubscriptionUsable } from "../../middleware/subscription";
+import { branchAddonPrice, configuredPrices, PLANS, planPrice, type Plan } from "./pricing";
 import { getGateway } from "./razorpay";
 
-const prices = () => ({
-  baseMonthly: env.PLAN_BASE_MONTHLY_PAISE,
-  extraBranchMonthly: env.PLAN_EXTRA_BRANCH_MONTHLY_PAISE,
-});
+const prices = configuredPrices;
 
 async function ownedOrganization(userId: number) {
   const org = await prisma.organization.findUnique({ where: { ownerId: userId } });
@@ -19,10 +15,7 @@ async function ownedOrganization(userId: number) {
   return org;
 }
 
-/** True while a paid period is running (not during the trial). */
-function inPaidPeriod(org: { subscriptionStatus: string; currentPeriodEnd: Date | null }, now: Date) {
-  return org.subscriptionStatus === "ACTIVE" && org.currentPeriodEnd !== null && org.currentPeriodEnd > now;
-}
+const inPaidPeriod = isInPaidPeriod;
 
 export async function billingSummary(userId: number, now = new Date()) {
   const org = await ownedOrganization(userId);
