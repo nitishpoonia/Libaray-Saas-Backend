@@ -25,7 +25,7 @@ export async function runSubscriptionSweep(push: PushSender, now = new Date()) {
 
   const today = todayIn(TZ, now);
   const orgs = await prisma.organization.findMany({
-    where: { subscriptionStatus: { in: ["TRIALING", "ACTIVE"] } },
+    where: { subscriptionStatus: { in: ["TRIALING", "ACTIVE"] }, suspendedAt: null },
     select: {
       ownerId: true,
       subscriptionStatus: true,

@@ -35,6 +35,27 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ ...valid, RAZORPAY_KEY_ID: "", RAZORPAY_WEBHOOK_SECRET: "" })).not.toThrow();
   });
 
+  it("turns the admin API on only with both secrets, distinct from JWT_SECRET", () => {
+    const key = Buffer.alloc(32, 7).toString("base64");
+    const secret = "a".repeat(40);
+    expect(() => parseEnv({ ...valid, ADMIN_JWT_SECRET: secret })).toThrow(/ADMIN_TOTP_KEY/);
+    expect(() => parseEnv({ ...valid, ADMIN_JWT_SECRET: valid.JWT_SECRET, ADMIN_TOTP_KEY: key })).toThrow(
+      /must differ/,
+    );
+    expect(() => parseEnv({ ...valid, ADMIN_JWT_SECRET: secret, ADMIN_TOTP_KEY: "c2hvcnQ=" })).toThrow(/32 bytes/);
+    expect(parseEnv({ ...valid, ADMIN_JWT_SECRET: secret, ADMIN_TOTP_KEY: key }).ADMIN_SESSION_HOURS).toBe(8);
+    // Empty values, as copied from .env.example, mean "off".
+    expect(parseEnv({ ...valid, ADMIN_JWT_SECRET: "", ADMIN_TOTP_KEY: "" }).ADMIN_JWT_SECRET).toBeUndefined();
+  });
+
+  it("reads CORS_ORIGINS as a list", () => {
+    expect(parseEnv({ ...valid, CORS_ORIGINS: " https://a.in , https://b.in," }).CORS_ORIGINS).toEqual([
+      "https://a.in",
+      "https://b.in",
+    ]);
+    expect(parseEnv(valid).CORS_ORIGINS).toEqual([]);
+  });
+
   it("refuses simulated latency in production", () => {
     expect(() =>
       parseEnv({ ...valid, NODE_ENV: "production", SIMULATE_LATENCY_MS: "2000" }),

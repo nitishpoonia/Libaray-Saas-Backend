@@ -109,6 +109,39 @@ A plan's price is fixed when its order is created. If branches are added before 
 
 Set up in the Razorpay dashboard: API keys (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`) and a webhook to `https://<api>/v1/billing/webhook` for the `order.paid` event (`RAZORPAY_WEBHOOK_SECRET`). The app won't start with keys but no webhook secret. The webhook answers 500 if applying a payment fails, so Razorpay retries it.
 
+## Admin API (/admin/v1)
+
+For the people who run the SaaS, used by the admin panel. Kept apart from the customer API:
+
+- Admins are in their own table and are only created with the script below, never by signup.
+- Tokens are signed with `ADMIN_JWT_SECRET` (must differ from `JWT_SECRET`) and audience `admin`, so customer and admin tokens never work on each other's API.
+- Login needs email + password + a 6-digit authenticator code (TOTP). A code can't be used twice.
+- Every request checks the session, so logout or disabling an admin cuts access at once. Sessions last `ADMIN_SESSION_HOURS` (default 8).
+- Every change is written to `admin_audit_logs` with who, when, why (a reason is required) and the values before and after.
+- Students' names and numbers are never shown: accounts show student counts, and notice logs mask numbers (`+91******3210`).
+
+Turn it on by setting `ADMIN_JWT_SECRET` and `ADMIN_TOTP_KEY` (see `.env.example`). Without them every admin route answers `503 ADMIN_DISABLED`. Add the admin panel's URL to `CORS_ORIGINS`.
+
+Create the first admin (locally, or from the Render service's Shell tab with `node dist/scripts/createAdmin.js …`):
+
+```bash
+npm run admin:create -- --email you@example.com --name "Your Name"
+npm run admin:create -- --email you@example.com --reset   # lost phone: new password + 2FA, ends all sessions
+```
+
+It prints a password and a 2FA secret once. Add the secret to an authenticator app, then log in.
+
+| Area | Routes |
+|---|---|
+| Auth | `POST /auth/login`, `POST /auth/logout`, `GET /me` |
+| Overview | `GET /overview`: accounts by status, signups, trial conversion, MRR, last daily run |
+| Accounts | `GET /organizations`, `GET /organizations/:id`, `POST /organizations/:id/extend-trial`, `/suspend`, `/unsuspend`, `/revoke-sessions` |
+| Billing | `GET /billing/orders` |
+| Ops | `GET /ops/job-runs`, `GET /ops/notifications` |
+| Audit | `GET /audit-log` |
+
+A suspended account can still log in and read its data, but every change answers `403 ACCOUNT_SUSPENDED`, the dashboard shows `subscription.suspended: true`, and the daily job sends it no texts.
+
 ## Code layout
 
 ```

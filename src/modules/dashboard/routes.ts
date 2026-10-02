@@ -65,7 +65,13 @@ async function dashboard(req: Request, res: Response) {
     }),
     prisma.organization.findUniqueOrThrow({
       where: { id: library.organizationId },
-      select: { subscriptionStatus: true, trialEndsAt: true, currentPeriodEnd: true, billedBranches: true },
+      select: {
+        subscriptionStatus: true,
+        trialEndsAt: true,
+        currentPeriodEnd: true,
+        billedBranches: true,
+        suspendedAt: true,
+      },
     }),
   ]);
 
@@ -127,6 +133,7 @@ async function dashboard(req: Request, res: Response) {
       status: org.subscriptionStatus,
       usable: isSubscriptionUsable(org, now) && branchCovered,
       branchCovered,
+      suspended: org.suspendedAt !== null,
       endsAt,
       daysRemaining: endsAt
         ? Math.max(0, Math.ceil((endsAt.getTime() - now.getTime()) / 86_400_000))

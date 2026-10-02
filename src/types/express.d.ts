@@ -27,6 +27,8 @@ declare global {
       user?: AuthUser;
       /** Set by libraryAccess for routes under /libraries/:libraryId. */
       access?: LibraryAccess;
+      /** Set by requireAdmin for routes under /admin/v1. */
+      admin?: { id: number; sessionId: number; email: string };
     }
   }
 }

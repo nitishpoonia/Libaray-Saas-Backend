@@ -15,6 +15,9 @@ const redactPaths = [
   "*.refreshToken",
   "*.DATABASE_URL",
   "*.JWT_SECRET",
+  "*.ADMIN_JWT_SECRET",
+  "*.ADMIN_TOTP_KEY",
+  "*.totpSecret",
 ];
 
 export const logger = pino({

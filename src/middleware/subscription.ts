@@ -10,6 +10,7 @@ type OrgBilling = {
   trialEndsAt: Date;
   currentPeriodEnd: Date | null;
   billedBranches: number;
+  suspendedAt: Date | null;
 };
 
 /**
@@ -21,10 +22,22 @@ export const requireActiveSubscription: RequestHandler = async (req, _res, next)
   const { library } = requireAccess(req);
   const org = await prisma.organization.findUniqueOrThrow({
     where: { id: library.organizationId },
-    select: { subscriptionStatus: true, trialEndsAt: true, currentPeriodEnd: true, billedBranches: true },
+    select: {
+      subscriptionStatus: true,
+      trialEndsAt: true,
+      currentPeriodEnd: true,
+      billedBranches: true,
+      suspendedAt: true,
+    },
   });
   const now = new Date();
 
+  if (org.suspendedAt) {
+    throw forbidden(
+      "This account is suspended. Contact support to restore it.",
+      "ACCOUNT_SUSPENDED",
+    );
+  }
   if (!isSubscriptionUsable(org, now)) {
     throw forbidden(
       "Your subscription has ended. Renew it to make changes.",
@@ -46,10 +59,15 @@ export const requireActiveSubscription: RequestHandler = async (req, _res, next)
   next();
 };
 
+/**
+ * Whether the account can make changes and send texts right now. A suspended account
+ * can't, whatever it has paid; `suspendedAt` is required so no caller forgets it.
+ */
 export function isSubscriptionUsable(
-  org: { subscriptionStatus: string; trialEndsAt: Date; currentPeriodEnd: Date | null },
+  org: { subscriptionStatus: string; trialEndsAt: Date; currentPeriodEnd: Date | null; suspendedAt: Date | null },
   now: Date,
 ): boolean {
+  if (org.suspendedAt) return false;
   if (org.subscriptionStatus === "TRIALING") return org.trialEndsAt > now;
   if (org.subscriptionStatus === "ACTIVE") {
     return org.currentPeriodEnd !== null && org.currentPeriodEnd > now;

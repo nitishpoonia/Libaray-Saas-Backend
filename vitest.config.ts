@@ -12,6 +12,9 @@ export default defineConfig({
         process.env.TEST_DATABASE_URL ??
         "postgresql://postgres:postgres@localhost:5432/library_saas_test",
       JWT_SECRET: "test-secret-test-secret-test-secret-123",
+      ADMIN_JWT_SECRET: "test-admin-secret-test-admin-secret-456",
+      ADMIN_TOTP_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+      CORS_ORIGINS: "https://admin.example.test",
     },
   },
 });
