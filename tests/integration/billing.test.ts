@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { addDays, todayIn } from "../../src/lib/dates";
 import { prisma } from "../../src/lib/prisma";
 import type { PaymentGateway } from "../../src/modules/billing/razorpay";
@@ -121,6 +121,68 @@ describe("billing", () => {
       .set("x-razorpay-signature", createHmac("sha256", WEBHOOK_SECRET).update(body).digest("hex"))
       .send(body);
     expect((await prisma.organization.findFirstOrThrow()).subscriptionStatus).toBe("ACTIVE");
+  });
+
+  it("answers 500 when applying the payment fails, so Razorpay retries", async () => {
+    const owner = await signupOwner();
+    const order = await api().post("/v1/billing/orders").set(auth(owner.token)).send({ kind: "PLAN", plan: "MONTHLY" });
+    const body = JSON.stringify({
+      event: "order.paid",
+      payload: { order: { entity: { id: order.body.data.orderId } }, payment: { entity: { id: "pay_7" } } },
+    });
+    const send = () =>
+      api()
+        .post("/v1/billing/webhook")
+        .set("content-type", "application/json")
+        .set("x-razorpay-signature", createHmac("sha256", WEBHOOK_SECRET).update(body).digest("hex"))
+        .send(body);
+
+    // The database drops out while the payment is being applied.
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection lost"));
+    const failed = await send();
+    spy.mockRestore();
+    expect(failed.status).toBe(500);
+    expect((await prisma.organization.findFirstOrThrow()).subscriptionStatus).toBe("TRIALING");
+
+    // Razorpay's retry goes through.
+    expect((await send()).status).toBe(200);
+    expect((await prisma.organization.findFirstOrThrow()).subscriptionStatus).toBe("ACTIVE");
+  });
+
+  it("acknowledges webhooks for orders that aren't ours", async () => {
+    const body = JSON.stringify({
+      event: "order.paid",
+      payload: { order: { entity: { id: "order_other_app" } }, payment: { entity: { id: "pay_x" } } },
+    });
+    const res = await api()
+      .post("/v1/billing/webhook")
+      .set("content-type", "application/json")
+      .set("x-razorpay-signature", createHmac("sha256", WEBHOOK_SECRET).update(body).digest("hex"))
+      .send(body);
+    expect(res.status).toBe(200);
+  });
+
+  it("shows branches added after checkout opened as unpaid", async () => {
+    const owner = await signupOwner();
+    await createLibrary(owner);
+    // Checkout opens for 1 branch (e.g. a UPI request the owner approves hours later)...
+    const order = await api().post("/v1/billing/orders").set(auth(owner.token)).send({ kind: "PLAN", plan: "MONTHLY" });
+    expect(order.body.data.amountPaise).toBe(99_900);
+    // ...meanwhile, still in the trial, two more branches are added.
+    await createLibrary(owner);
+    await createLibrary(owner);
+    const verify = await api()
+      .post("/v1/billing/verify")
+      .set(auth(owner.token))
+      .send({ orderId: order.body.data.orderId, paymentId: "pay_1", signature: sign(order.body.data.orderId, "pay_1") });
+    expect(verify.status).toBe(200);
+    expect(verify.body.data.billedBranches).toBe(1);
+    expect(verify.body.data.unpaidBranches).toBe(2);
+    expect(verify.body.data.branchAddon.amountPaise).toBeGreaterThan(0);
+
+    await buy(owner.token, { kind: "BRANCH_ADDON" }, "pay_2");
+    const after = await api().get("/v1/billing").set(auth(owner.token));
+    expect(after.body.data.unpaidBranches).toBe(1);
   });
 
   it("charges for an extra branch during a paid period", async () => {

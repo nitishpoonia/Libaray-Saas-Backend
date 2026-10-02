@@ -200,7 +200,7 @@ export async function runDailyJob(senders: Senders, now = new Date()) {
   const runId = await claimRun(runDate, now);
   if (runId === null) {
     logger.warn({ runDate }, "Daily job is already running; skipped");
-    return { status: "ALREADY_RUNNING" as const, libraries: 0, results: [], failures: [] };
+    return { status: "ALREADY_RUNNING" as const, libraries: 0, subscriptions: null, results: [], failures: [] };
   }
   const run = { id: runId };
 

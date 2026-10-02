@@ -1,5 +1,6 @@
 import express, { Router, type Request, type Response } from "express";
 import { z } from "zod";
+import { AppError } from "../../lib/errors";
 import { sendData } from "../../lib/http";
 import { logger } from "../../lib/logger";
 import { authMiddleware } from "../../middleware/auth";
@@ -70,8 +71,14 @@ billingWebhook.post("/", express.raw({ type: "*/*", limit: "1mb" }), async (req:
       try {
         await markOrderPaid(orderId, paymentId);
       } catch (err) {
-        // Orders from another system on the same Razorpay account aren't ours.
-        req.log.warn({ err, orderId }, "Webhook for an unknown order");
+        // Orders from another system on the same Razorpay account aren't ours: acknowledge them.
+        if (err instanceof AppError && err.code === "ORDER_NOT_FOUND") {
+          req.log.warn({ orderId }, "Webhook for an unknown order");
+        } else {
+          // Anything else (database down, a restart mid-request) answers 500, so Razorpay
+          // retries later instead of the owner's payment never being applied.
+          throw err;
+        }
       }
     }
   } else {

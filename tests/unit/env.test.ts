@@ -27,6 +27,14 @@ describe("parseEnv", () => {
     expect(parseEnv({ ...valid, RENDER: "true", NODE_ENV: "production" }).NODE_ENV).toBe("production");
   });
 
+  it("needs the webhook secret whenever Razorpay keys are set", () => {
+    const keys = { RAZORPAY_KEY_ID: "rzp_live_x", RAZORPAY_KEY_SECRET: "secret" };
+    expect(() => parseEnv({ ...valid, ...keys })).toThrow(/RAZORPAY_WEBHOOK_SECRET/);
+    expect(parseEnv({ ...valid, ...keys, RAZORPAY_WEBHOOK_SECRET: "whsec" }).RAZORPAY_KEY_ID).toBe("rzp_live_x");
+    // Empty values, as copied from .env.example, mean billing is off.
+    expect(() => parseEnv({ ...valid, RAZORPAY_KEY_ID: "", RAZORPAY_WEBHOOK_SECRET: "" })).not.toThrow();
+  });
+
   it("refuses simulated latency in production", () => {
     expect(() =>
       parseEnv({ ...valid, NODE_ENV: "production", SIMULATE_LATENCY_MS: "2000" }),

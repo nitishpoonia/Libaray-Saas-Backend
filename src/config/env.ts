@@ -56,6 +56,15 @@ const envSchema = z
     message: "Set NODE_ENV=production on Render",
     path: ["NODE_ENV"],
   })
+  // With keys but no webhook secret every webhook fails its signature check, and
+  // Razorpay quietly disables the webhook after repeated failures.
+  .refine(
+    (env) => !env.RAZORPAY_KEY_ID || (Boolean(env.RAZORPAY_KEY_SECRET) && Boolean(env.RAZORPAY_WEBHOOK_SECRET)),
+    {
+      message: "RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET are required when RAZORPAY_KEY_ID is set",
+      path: ["RAZORPAY_WEBHOOK_SECRET"],
+    },
+  )
   .refine((env) => !(env.NODE_ENV === "production" && env.SIMULATE_LATENCY_MS > 0), {
     message: "SIMULATE_LATENCY_MS must be 0 in production",
     path: ["SIMULATE_LATENCY_MS"],

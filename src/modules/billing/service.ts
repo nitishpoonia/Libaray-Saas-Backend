@@ -2,6 +2,7 @@ import dayjs from "dayjs";
 import { env } from "../../config/env";
 import { AppError, badRequest, conflict, forbidden, notFound } from "../../lib/errors";
 import type { Db } from "../../lib/db";
+import { logger } from "../../lib/logger";
 import { prisma } from "../../lib/prisma";
 import { isSubscriptionUsable } from "../../middleware/subscription";
 import { branchAddonPrice, PLANS, planPrice, type Plan } from "./pricing";
@@ -34,6 +35,9 @@ export async function billingSummary(userId: number, now = new Date()) {
     }),
   ]);
   const billable = Math.max(1, branches);
+  // A plan paid for fewer branches than exist (the owner added branches between
+  // opening checkout and paying): these still need a branch add-on each.
+  const unpaidBranches = inPaidPeriod(org, now) ? Math.max(0, branches - org.billedBranches) : 0;
 
   let keyId: string | null = null;
   try {
@@ -49,6 +53,7 @@ export async function billingSummary(userId: number, now = new Date()) {
     currentPeriodEnd: org.currentPeriodEnd,
     branches,
     billedBranches: org.billedBranches,
+    unpaidBranches,
     plans: (Object.keys(PLANS) as Plan[]).map((plan) => ({
       plan,
       months: PLANS[plan].months,
@@ -155,6 +160,15 @@ export async function markOrderPaid(orderId: string, paymentId: string, now = ne
       if (org.currentPeriodEnd) candidates.push(org.currentPeriodEnd);
       periodStart = new Date(Math.max(...candidates.map((d) => d.getTime())));
       periodEnd = dayjs(periodStart).add(payment.months ?? 1, "month").toDate();
+      // The price was fixed when the order was created. A UPI payment can be approved
+      // hours later, after more branches were added; the gap shows as unpaidBranches.
+      const branchesNow = await tx.library.count({ where: { organizationId: org.id } });
+      if (branchesNow > payment.branches) {
+        logger.warn(
+          { organizationId: org.id, paidFor: payment.branches, branchesNow, orderId },
+          "Plan paid for fewer branches than the account has",
+        );
+      }
       await tx.organization.update({
         where: { id: org.id },
         data: {
