@@ -91,6 +91,28 @@ describe("staff roles", () => {
     }
   });
 
+  it("shows staff only the payments they recorded", async () => {
+    const owner = await signupOwner();
+    const lib = await createLibrary(owner);
+    const staff = await addStaff(owner.token, lib.id, "STAFF");
+
+    const byStaff = await addStudent(staff, lib.id, { seatId: lib.seats[0]!.id });
+    const byOwner = await addStudent(owner.token, lib.id, { seatId: lib.seats[1]!.id });
+
+    const staffList = await api().get(`/v1/libraries/${lib.id}/payments`).set(auth(staff));
+    expect(staffList.body.data.map((p: { id: number }) => p.id)).toEqual([byStaff.body.data.receipt.id]);
+    expect(staffList.body.meta.total).toBe(1);
+
+    const own = `/v1/libraries/${lib.id}/payments/${byStaff.body.data.receipt.id}/receipt`;
+    const others = `/v1/libraries/${lib.id}/payments/${byOwner.body.data.receipt.id}/receipt`;
+    expect((await api().get(own).set(auth(staff))).status).toBe(200);
+    expect((await api().get(others).set(auth(staff))).status).toBe(404);
+
+    // The owner still sees both.
+    const ownerList = await api().get(`/v1/libraries/${lib.id}/payments`).set(auth(owner.token));
+    expect(ownerList.body.meta.total).toBe(2);
+  });
+
   it("lets a manager handle money and settings but not staff", async () => {
     const owner = await signupOwner();
     const lib = await createLibrary(owner);

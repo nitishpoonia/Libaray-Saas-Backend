@@ -25,6 +25,17 @@ const listQuery = pagination.extend({
   includeVoided: z.enum(["true", "false"]).default("false"),
 });
 
+/**
+ * Which payments the caller may see. Staff see only the ones they recorded (to
+ * re-share a receipt); managers and the owner see the whole branch.
+ */
+function visiblePayments(req: Request): Prisma.PaymentWhereInput {
+  const { library, role } = requireAccess(req);
+  return role === "STAFF"
+    ? { libraryId: library.id, recordedById: requireUser(req).id }
+    : { libraryId: library.id };
+}
+
 /** Collect fees against a membership period: POST /memberships/:membershipId/payments */
 async function record(req: Request, res: Response) {
   const { library } = requireAccess(req);
@@ -44,7 +55,7 @@ async function list(req: Request, res: Response) {
   const query = listQuery.parse(req.query);
 
   const where: Prisma.PaymentWhereInput = {
-    libraryId: library.id,
+    ...visiblePayments(req),
     ...(query.includeVoided === "true" ? {} : { voidedAt: null }),
     ...(query.studentId ? { studentId: query.studentId } : {}),
     ...(query.from || query.to
@@ -74,7 +85,7 @@ async function list(req: Request, res: Response) {
 async function receipt(req: Request, res: Response) {
   const { library } = requireAccess(req);
   const paymentId = id.parse(req.params.paymentId);
-  const exists = await prisma.payment.count({ where: { id: paymentId, libraryId: library.id } });
+  const exists = await prisma.payment.count({ where: { id: paymentId, ...visiblePayments(req) } });
   if (!exists) throw notFound("Payment not found", "PAYMENT_NOT_FOUND");
   const { today } = await syncLifecycle(library);
   sendData(res, await receiptFor(library, paymentId, today));

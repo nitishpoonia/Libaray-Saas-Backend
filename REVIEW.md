@@ -512,3 +512,11 @@ Found while reviewing the PR stack, with each bug reproduced against a real Post
 
 - [x] **R6 · P2 · Missing `NODE_ENV` on Render runs the app in development mode silently.**
   **Status:** fixed in PR `feat/domain-rewrite`: the app refuses to start when `RENDER=true` (set by Render on every service) and `NODE_ENV` isn't `production`.
+
+- [x] **R13 · P2 · Staff could see every payment in the branch.**
+  Problem: the dashboard hid finance from STAFF, but `GET /payments` listed every payment with amounts.
+  **Decision:** staff see only payments they recorded (to re-share receipts); managers and the owner see all.
+  **Status:** fixed in PR `feat/domain-rewrite`: the payments list and receipt routes filter by `recordedById` for STAFF. Tested.
+
+- [x] **R14 · Decision · Renewing after overdue.**
+  **Decision:** the new period starts the day after the old one ended, so the student pays for the overdue days (the seat was held for them). This is how `renew` already works; no change.
