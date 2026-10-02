@@ -7,7 +7,7 @@ import { prisma } from "../../lib/prisma";
 import { id, isoDate, timeOfDay } from "../../lib/validation";
 import { requireAccess, requireRole } from "../../middleware/libraryAccess";
 import { requireActiveSubscription } from "../../middleware/subscription";
-import { findConflicts } from "../memberships/availability";
+import { findConflicts, lockSeat } from "../memberships/availability";
 import { syncLifecycle } from "../memberships/lifecycle";
 import { periodEnd } from "../memberships/rules";
 
@@ -146,30 +146,35 @@ async function update(req: Request, res: Response) {
  * Removes a seat. It's archived, not deleted, so past memberships keep pointing at it.
  * Refused while any current or future booking uses it (REVIEW B19: past bookings
  * no longer block removal).
+ *
+ * Takes the same seat lock as a booking, so a booking and a removal arriving together
+ * run one after the other: either the booking lands first and the removal is refused,
+ * or the seat is archived first and the booking is refused.
  */
 async function remove(req: Request, res: Response) {
   const { library } = requireAccess(req);
   const seatId = id.parse(req.params.seatId);
   const { today } = await syncLifecycle(library);
 
-  const seat = await prisma.seat.findFirst({
-    where: { id: seatId, libraryId: library.id, archivedAt: null },
-  });
-  if (!seat) throw notFound("Seat not found", "SEAT_NOT_FOUND");
+  await prisma.$transaction(async (tx) => {
+    const seat = await lockSeat(tx, library.id, seatId);
 
-  const inUse = await prisma.membership.count({
-    where: {
-      seatId,
-      status: { in: ["ACTIVE", "OVERDUE"] },
-      endDate: { gte: toDbDate(today) },
-    },
-  });
-  const overdueHolding = await prisma.membership.count({ where: { seatId, status: "OVERDUE" } });
-  if (inUse + overdueHolding > 0) {
-    throw conflict(`Seat ${seat.label} has current or upcoming bookings`, "SEAT_IN_USE");
-  }
+    const holding = await tx.membership.count({
+      where: {
+        seatId,
+        OR: [
+          { status: "ACTIVE", endDate: { gte: toDbDate(today) } },
+          // An overdue period holds its seat through the grace period.
+          { status: "OVERDUE" },
+        ],
+      },
+    });
+    if (holding > 0) {
+      throw conflict(`Seat ${seat.label} has current or upcoming bookings`, "SEAT_IN_USE");
+    }
 
-  await prisma.seat.update({ where: { id: seatId }, data: { archivedAt: new Date() } });
+    await tx.seat.update({ where: { id: seatId }, data: { archivedAt: new Date() } });
+  });
   res.status(204).end();
 }
 

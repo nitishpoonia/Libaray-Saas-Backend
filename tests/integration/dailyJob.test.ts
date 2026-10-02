@@ -3,6 +3,7 @@ import { addDays, todayIn } from "../../src/lib/dates";
 import { prisma } from "../../src/lib/prisma";
 import type { PushSender, SendResult, TextSender } from "../../src/modules/notifications/channels";
 import { runDailyJob } from "../../src/modules/notifications/daily";
+import type { TextMessage } from "../../src/modules/notifications/templates";
 import { addStudent, api, auth, createLibrary, nextPhone, resetDb, signupOwner } from "./helpers";
 
 beforeEach(resetDb);
@@ -14,9 +15,9 @@ class FakeText implements TextSender {
   channel = "SMS" as const;
   sent: Array<{ to: string; text: string }> = [];
   fail = false;
-  async send(to: string, text: string): Promise<SendResult> {
+  async send(to: string, message: TextMessage): Promise<SendResult> {
     if (this.fail) return { status: "FAILED", reason: "provider down" };
-    this.sent.push({ to, text });
+    this.sent.push({ to, text: message.text });
     return { status: "SENT" };
   }
 }
@@ -120,5 +121,28 @@ describe("daily job", () => {
     expect(text.sent).toHaveLength(0);
     const manager = await prisma.user.findUniqueOrThrow({ where: { phone: `+91${managerPhone}` } });
     expect(push.sent.map((p) => p.userId).sort()).toEqual([owner.userId, manager.id].sort());
+  });
+
+  it("skips while another run is in progress, and takes over a run that crashed", async () => {
+    const owner = await signupOwner();
+    const lib = await createLibrary(owner, 2);
+    await addStudent(owner.token, lib.id, { seatId: lib.seats[0]!.id, name: "Late", ...endedDaysAgo(1) });
+    const runDate = new Date(`${today()}T00:00:00.000Z`);
+
+    // A run that started a minute ago and hasn't finished.
+    await prisma.jobRun.create({
+      data: { name: "daily", runDate, status: "RUNNING", startedAt: new Date(Date.now() - 60_000) },
+    });
+    const text = new FakeText();
+    const skipped = await runDailyJob({ text, push: new FakePush() });
+    expect(skipped.status).toBe("ALREADY_RUNNING");
+    expect(text.sent).toHaveLength(0);
+
+    // The same run, but started two hours ago: treated as crashed and taken over.
+    await prisma.jobRun.updateMany({ data: { startedAt: new Date(Date.now() - 2 * 60 * 60 * 1000) } });
+    const resumed = await runDailyJob({ text, push: new FakePush() });
+    expect(resumed.status).toBe("SUCCEEDED");
+    expect(text.sent).toHaveLength(1);
+    expect(await prisma.jobRun.count()).toBe(1);
   });
 });

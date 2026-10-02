@@ -46,6 +46,15 @@ const envSchema = z
     // Firebase service account JSON as a single-line string. Optional: without it,
     // push notifications are skipped and logged instead.
     FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
+
+    // Render sets RENDER=true on every service. Used only to catch a missing NODE_ENV.
+    RENDER: z.string().optional(),
+  })
+  // Without NODE_ENV the app would silently run in development mode on Render
+  // (pretty logs, no production guards), so refuse to start instead.
+  .refine((env) => !(env.RENDER === "true" && env.NODE_ENV !== "production"), {
+    message: "Set NODE_ENV=production on Render",
+    path: ["NODE_ENV"],
   })
   .refine((env) => !(env.NODE_ENV === "production" && env.SIMULATE_LATENCY_MS > 0), {
     message: "SIMULATE_LATENCY_MS must be 0 in production",

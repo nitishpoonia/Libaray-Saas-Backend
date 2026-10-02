@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import * as authService from "../../src/modules/auth/service";
 import { api, auth, nextPhone, resetDb } from "./helpers";
 
 beforeEach(resetDb);
@@ -72,6 +73,24 @@ describe("auth", () => {
 
     expect((await api().post("/v1/auth/refresh").send({ refreshToken: deviceB.body.data.refreshToken })).status).toBe(401);
     expect((await api().post("/v1/auth/refresh").send({ refreshToken: deviceA.body.data.refreshToken })).status).toBe(200);
+  });
+
+  it("lets only one of several simultaneous refreshes with the same token succeed", async () => {
+    const signup = await api()
+      .post("/v1/auth/signup")
+      .send({ name: "Asha", identifier: nextPhone(), password: "password123" });
+    const token = signup.body.data.refreshToken;
+
+    // Called directly (no HTTP in between) so the calls genuinely overlap.
+    const results = await Promise.allSettled(Array.from({ length: 10 }, () => authService.refresh(token)));
+    const winners = results.filter((r) => r.status === "fulfilled");
+    expect(winners).toHaveLength(1);
+
+    // The token the winner received is the one that works next.
+    const next = await api()
+      .post("/v1/auth/refresh")
+      .send({ refreshToken: (winners[0] as PromiseFulfilledResult<{ refreshToken: string }>).value.refreshToken });
+    expect(next.status).toBe(200);
   });
 
   it("rejects requests without a valid token", async () => {

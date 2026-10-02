@@ -55,6 +55,10 @@ A second Render service of type **Cron Job**, same repo and environment variable
 
 Each run updates membership statuses, texts overdue students (once per period, plus a warning on the last reserved day) and pushes a digest to owners and managers. It's safe to run more than once a day: nothing is sent twice, and failed messages are retried on the next run. Every run is recorded in the `job_runs` table.
 
+If a run is started while another is still going (say, a manual run during the scheduled one), it exits without doing anything. A run stuck as RUNNING for over an hour counts as crashed, and the next run takes over.
+
+Student texts are DLT templates, defined in `src/modules/notifications/templates.ts` in the exact form to register (`{#var#}` placeholders). The SMS/WhatsApp sender gets the template name and the values in order.
+
 Student texts use `STUDENT_NOTICE_CHANNEL` (SMS or WhatsApp). Until a provider is connected (`TEXT_PROVIDER=none`), texts are logged and recorded as `SKIPPED`.
 
 ## API (v1)
@@ -62,6 +66,8 @@ Student texts use `STUDENT_NOTICE_CHANNEL` (SMS or WhatsApp). Until a provider i
 All routes are under `/v1`. Success responses are `{ data, meta? }`, errors are `{ error: { code, message, details? } }`. Dates are `YYYY-MM-DD` in the branch's timezone; times are 24-hour `HH:MM`; money is rupees.
 
 Auth uses a 15-minute access token (`Authorization: Bearer …`) and a 30-day refresh token that rotates on every refresh.
+
+A refresh token works once. If the app sends the same one twice (for example, two requests hit 401 together and both refresh), only one call succeeds and the others get `SESSION_EXPIRED`. So the app should run one refresh at a time: the first 401 starts it, and other requests wait for that result instead of refreshing on their own.
 
 | Area | Routes |
 |---|---|

@@ -169,6 +169,27 @@ export async function runDailyForLibrary(
 
 const JOB_NAME = "daily";
 
+/** A run still RUNNING after this long is treated as crashed and can be taken over. */
+const STALE_RUN_MS = 60 * 60 * 1000;
+
+/**
+ * Claims today's run in one statement. Inserts the row, or takes over a run that
+ * finished or crashed; returns null while another run is in progress, so a manual
+ * re-run during the scheduled one can't send every text twice.
+ */
+async function claimRun(runDate: Date, now: Date): Promise<number | null> {
+  const staleBefore = new Date(now.getTime() - STALE_RUN_MS);
+  const rows = await prisma.$queryRaw<Array<{ id: number }>>`
+    INSERT INTO job_runs (name, run_date, status, started_at)
+    VALUES (${JOB_NAME}, ${runDate}, 'RUNNING'::"JobRunStatus", ${now})
+    ON CONFLICT (name, run_date) DO UPDATE
+      SET status = 'RUNNING'::"JobRunStatus", started_at = EXCLUDED.started_at,
+          finished_at = NULL, error = NULL
+      WHERE job_runs.status <> 'RUNNING'::"JobRunStatus" OR job_runs.started_at < ${staleBefore}
+    RETURNING id`;
+  return rows[0]?.id ?? null;
+}
+
 /**
  * Runs the daily work for every branch and records the run (REVIEW A3, O4).
  * One branch failing doesn't stop the others; the run is marked FAILED and the
@@ -176,11 +197,12 @@ const JOB_NAME = "daily";
  */
 export async function runDailyJob(senders: Senders, now = new Date()) {
   const runDate = toDbDate(todayIn("Asia/Kolkata", now));
-  const run = await prisma.jobRun.upsert({
-    where: { name_runDate: { name: JOB_NAME, runDate } },
-    create: { name: JOB_NAME, runDate, status: "RUNNING", startedAt: now },
-    update: { status: "RUNNING", startedAt: now, finishedAt: null, error: null },
-  });
+  const runId = await claimRun(runDate, now);
+  if (runId === null) {
+    logger.warn({ runDate }, "Daily job is already running; skipped");
+    return { status: "ALREADY_RUNNING" as const, libraries: 0, results: [], failures: [] };
+  }
+  const run = { id: runId };
 
   // Before the branches, so texts are only sent for subscriptions that are still usable.
   let subscriptions: Awaited<ReturnType<typeof runSubscriptionSweep>> | null = null;
