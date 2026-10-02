@@ -118,7 +118,19 @@ export async function logout(userId: number, sessionId: number, deviceToken?: st
   ]);
 }
 
-/** Logs out every device, e.g. after a lost phone. */
+/**
+ * "Sign out on all phones", e.g. after a lost phone: ends every session and forgets every
+ * push token. Revoking sessions alone would leave the lost phone receiving the owner's
+ * daily summary, since push tokens aren't tied to a session.
+ */
+export async function logoutEverywhere(userId: number) {
+  await prisma.$transaction([
+    prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } }),
+    prisma.deviceToken.deleteMany({ where: { userId } }),
+  ]);
+}
+
+/** Ends the user's sessions, optionally keeping one (password change keeps the current phone). */
 export async function revokeAllSessions(userId: number, exceptSessionId?: number) {
   await prisma.session.updateMany({
     where: { userId, revokedAt: null, ...(exceptSessionId ? { id: { not: exceptSessionId } } : {}) },
