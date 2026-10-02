@@ -481,3 +481,34 @@ The rule is that controllers never touch Prisma directly, and services never tou
   **Answer:** there's no production database yet. Choose a managed Postgres with daily backups before launch (O7).
 - [x] **Q6.** Does the Render instance sleep when idle? This affects O4.
   **Answer:** no, it stays up.
+
+## 9. PR review (1 Oct 2026)
+
+Found while reviewing the PR stack, with each bug reproduced against a real Postgres before fixing. Each fix lives in the PR that introduced the code.
+
+- [x] **R1 · P0 · Double-tap on "Void" takes the money off twice.**
+  Where: `payments/service.ts` `voidPayment`.
+  Problem: the "already voided?" check ran before any lock, so two requests at the same moment both passed it. With ₹300 + ₹300 + ₹400 paid, voiding the first ₹300 twice left `amountPaid` at ₹400 while the real non-voided total was ₹700.
+  **Status:** fixed in PR `feat/domain-rewrite`: the void is claimed with one conditional UPDATE (`WHERE voided_at IS NULL`), and `amountPaid` is recomputed as the sum of non-voided payments. Tested.
+
+- [x] **R2 · P1 · Two refreshes at once can leave the app holding a dead token.**
+  Where: `auth/service.ts` `refresh`.
+  Problem: read-then-update. Two calls with the same refresh token both got 200, but only one of the two new tokens worked; if the app kept the other, the user was logged out.
+  **Status:** fixed in PR `feat/domain-rewrite`: the swap is one conditional UPDATE, so exactly one call wins and the others get `SESSION_EXPIRED`. The app must run one refresh at a time (see README). Tested.
+
+- [x] **R3 · P2 · Valid paise amounts rejected.**
+  Where: `lib/validation.ts` `rupees`.
+  Problem: `Math.round(n * 100) === n * 100` fails for ₹1.15, ₹4.35, ₹0.29 because of floating point.
+  **Status:** fixed in PR `feat/domain-rewrite`: compares with a tiny tolerance. Tested.
+
+- [x] **R4 · P3 · Removing a seat could race a booking on it.**
+  Where: `seats/routes.ts` `remove`.
+  **Status:** fixed in PR `feat/domain-rewrite`: takes the same seat lock as bookings, inside one transaction.
+
+- [x] **R5 · P2 · Login limit shared by everyone behind one mobile-network IP.**
+  Where: `middleware/rateLimiters.ts`.
+  Problem: Indian mobile networks put many users behind one public IP (CGNAT), so 5 attempts per IP could lock out unrelated people.
+  **Status:** fixed in PR `feat/domain-rewrite`: 30 per IP (stops one machine hammering) plus 5 per account on login (protects each password).
+
+- [x] **R6 · P2 · Missing `NODE_ENV` on Render runs the app in development mode silently.**
+  **Status:** fixed in PR `feat/domain-rewrite`: the app refuses to start when `RENDER=true` (set by Render on every service) and `NODE_ENV` isn't `production`.

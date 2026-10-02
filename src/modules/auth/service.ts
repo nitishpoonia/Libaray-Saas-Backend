@@ -73,25 +73,33 @@ export async function login(input: { identifier: Identifier; password: string })
 /**
  * Swaps a refresh token for a new pair. The old refresh token stops working
  * (rotation), so a leaked one can be used at most once.
+ *
+ * The swap is one conditional UPDATE: it only applies while the session still holds
+ * the token being exchanged. If the app sends the same refresh token twice at once,
+ * exactly one call gets the new pair and the other gets SESSION_EXPIRED, so the app
+ * never ends up holding a token that was already replaced. The app should run one
+ * refresh at a time and let other requests wait for it.
  */
 export async function refresh(refreshToken: string): Promise<AuthTokens> {
+  const presentedHash = hashToken(refreshToken);
   const session = await prisma.session.findUnique({
-    where: { refreshTokenHash: hashToken(refreshToken) },
+    where: { refreshTokenHash: presentedHash },
+    select: { id: true, userId: true, revokedAt: true, expiresAt: true },
   });
 
-  if (!session || session.revokedAt || session.expiresAt <= new Date()) {
-    throw unauthorized("Session expired, please log in again", "SESSION_EXPIRED");
-  }
+  const expired = () => unauthorized("Session expired, please log in again", "SESSION_EXPIRED");
+  if (!session || session.revokedAt || session.expiresAt <= new Date()) throw expired();
 
   const nextRefreshToken = newRefreshToken();
-  await prisma.session.update({
-    where: { id: session.id },
+  const { count } = await prisma.session.updateMany({
+    where: { id: session.id, refreshTokenHash: presentedHash, revokedAt: null },
     data: {
       refreshTokenHash: hashToken(nextRefreshToken),
       expiresAt: refreshExpiry(),
       lastUsedAt: new Date(),
     },
   });
+  if (count === 0) throw expired();
 
   return {
     accessToken: signAccessToken(session.userId, session.id),

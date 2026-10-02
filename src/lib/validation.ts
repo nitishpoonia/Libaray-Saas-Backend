@@ -34,11 +34,20 @@ export const timeOfDay = z.string().transform((value, ctx) => {
   return minutes;
 });
 
+/**
+ * True when `n` has at most 2 decimal places. Floating point makes an exact check
+ * wrong (1.15 * 100 is 114.99999999999999), so it allows a tiny error instead.
+ */
+export function hasAtMostTwoDecimals(n: number): boolean {
+  const paise = n * 100;
+  return Math.abs(paise - Math.round(paise)) < 1e-6;
+}
+
 /** Rupees with up to 2 decimals, sent as number or string. */
 export const rupees = z.coerce
   .number()
   .finite()
-  .refine((n) => Math.round(n * 100) === n * 100, "At most 2 decimal places")
+  .refine(hasAtMostTwoDecimals, "At most 2 decimal places")
   .refine((n) => n <= 10_000_000, "Amount is too large");
 
 export const positiveRupees = rupees.refine((n) => n > 0, "Must be more than 0");

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { addDays, todayIn } from "../../src/lib/dates";
 import { addStudent, api, auth, createLibrary, resetDb, signupOwner } from "./helpers";
+import { prisma } from "../../src/lib/prisma";
+import { voidPayment } from "../../src/modules/payments/service";
 
 beforeEach(resetDb);
 
@@ -133,6 +135,50 @@ describe("payments and receipts (REVIEW B13)", () => {
 
     const detail = await api().get(`/v1/libraries/${lib.id}/students/${added.body.data.student.id}`).set(auth(owner.token));
     expect(detail.body.data.pendingAmount).toBe(1000);
+  });
+
+  it("voids a payment only once when the request arrives twice at the same moment", async () => {
+    const owner = await signupOwner();
+    const lib = await createLibrary(owner);
+    const added = await addStudent(owner.token, lib.id, {
+      seatId: lib.seats[0]!.id,
+      fee: 1000,
+      payment: { amount: 300, mode: "CASH" },
+    });
+    const membershipId = added.body.data.student.current.id;
+    for (const amount of [300, 400]) {
+      await api()
+        .post(`/v1/libraries/${lib.id}/memberships/${membershipId}/payments`)
+        .set(auth(owner.token))
+        .send({ amount, mode: "UPI" });
+    }
+
+    // Several taps on "Void" for the first ₹300, called directly so they genuinely overlap.
+    const paymentId = added.body.data.receipt.id;
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        prisma.$transaction((tx) => voidPayment(tx, { libraryId: lib.id, paymentId, reason: "Entered twice" })),
+      ),
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+
+    // ₹300 + ₹400 are still paid, so ₹300 is pending (not ₹600).
+    const detail = await api()
+      .get(`/v1/libraries/${lib.id}/students/${added.body.data.student.id}`)
+      .set(auth(owner.token));
+    expect(detail.body.data.pendingAmount).toBe(300);
+  });
+
+  it("accepts fees with paise", async () => {
+    const owner = await signupOwner();
+    const lib = await createLibrary(owner);
+    const added = await addStudent(owner.token, lib.id, {
+      seatId: lib.seats[0]!.id,
+      fee: 1000.15,
+      payment: { amount: 4.35, mode: "UPI" },
+    });
+    expect(added.status).toBe(201);
+    expect(added.body.data.student.pendingAmount).toBe(995.8);
   });
 });
 
