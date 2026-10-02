@@ -87,12 +87,13 @@ A refresh token works once. If the app sends the same one twice (for example, tw
 | | Owner | Manager | Staff |
 |---|:-:|:-:|:-:|
 | Students, renewals, collect fees, seat availability | ✓ | ✓ | ✓ |
+| Payments list and receipts | All | All | Only ones they recorded |
 | Void payments, expenses, finance on dashboard, seats, branch settings | ✓ | ✓ | |
 | Create branches, manage staff, billing | ✓ | | |
 
 ### Membership lifecycle
 
-`ACTIVE` → period ends without renewal → `OVERDUE` (seat held for the grace period, 7 days by default) → `CANCELLED` on day 7, seat released. A renewal creates a new period linked to the old one, which becomes `COMPLETED`. Fees are tracked per period; a period's `paymentStatus` is `PAID` or `PENDING`.
+`ACTIVE` → period ends without renewal → `OVERDUE` (seat held for the grace period, 7 days by default) → `CANCELLED` on day 7, seat released. A renewal creates a new period linked to the old one, which becomes `COMPLETED`. Renewing an overdue membership continues from the day after the old period ended, so the overdue days (when the seat was held) are paid for. Fees are tracked per period; a period's `paymentStatus` is `PAID` or `PENDING`.
 
 ### Billing
 

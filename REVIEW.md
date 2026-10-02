@@ -540,3 +540,11 @@ Found while reviewing the PR stack, with each bug reproduced against a real Post
 - [ ] **R12 · P3 · Branch add-on bought right after a plan also charges for remaining trial days.**
   Where: `billing/pricing.ts` `branchAddonPrice` uses days until `currentPeriodEnd`, and a plan bought during the trial runs from the trial's end, so the remaining trial days are included in the add-on price even though branches are free during the trial.
   Fix direction: price the add-on from the later of now and the paid period's start.
+
+- [x] **R13 · P2 · Staff could see every payment in the branch.**
+  Problem: the dashboard hid finance from STAFF, but `GET /payments` listed every payment with amounts.
+  **Decision:** staff see only payments they recorded (to re-share receipts); managers and the owner see all.
+  **Status:** fixed in PR `feat/domain-rewrite`: the payments list and receipt routes filter by `recordedById` for STAFF. Tested.
+
+- [x] **R14 · Decision · Renewing after overdue.**
+  **Decision:** the new period starts the day after the old one ended, so the student pays for the overdue days (the seat was held for them). This is how `renew` already works; no change.
