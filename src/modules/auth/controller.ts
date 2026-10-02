@@ -30,6 +30,6 @@ export async function logout(req: Request, res: Response) {
 
 export async function logoutAll(req: Request, res: Response) {
   const user = requireUser(req);
-  await auth.revokeAllSessions(user.id);
+  await auth.logoutEverywhere(user.id);
   res.status(204).end();
 }
