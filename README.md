@@ -63,6 +63,8 @@ All routes are under `/v1`. Success responses are `{ data, meta? }`, errors are 
 
 Auth uses a 15-minute access token (`Authorization: Bearer …`) and a 30-day refresh token that rotates on every refresh.
 
+A refresh token works once. If the app sends the same one twice (for example, two requests hit 401 together and both refresh), only one call succeeds and the others get `SESSION_EXPIRED`. So the app should run one refresh at a time: the first 401 starts it, and other requests wait for that result instead of refreshing on their own.
+
 | Area | Routes |
 |---|---|
 | Auth | `POST /auth/signup`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/logout-all` |

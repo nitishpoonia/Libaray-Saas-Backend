@@ -22,6 +22,11 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ JWT_SECRET: valid.JWT_SECRET })).toThrow(/DATABASE_URL/);
   });
 
+  it("refuses to run on Render without NODE_ENV=production", () => {
+    expect(() => parseEnv({ ...valid, RENDER: "true" })).toThrow(/NODE_ENV=production/);
+    expect(parseEnv({ ...valid, RENDER: "true", NODE_ENV: "production" }).NODE_ENV).toBe("production");
+  });
+
   it("refuses simulated latency in production", () => {
     expect(() =>
       parseEnv({ ...valid, NODE_ENV: "production", SIMULATE_LATENCY_MS: "2000" }),
