@@ -16,7 +16,8 @@ async function main() {
     { status: result.status, libraries: result.libraries, failures: result.failures },
     "Daily job finished",
   );
-  return result.status === "SUCCEEDED" ? 0 : 1;
+  // ALREADY_RUNNING isn't a failure: the run in progress does the work.
+  return result.status === "FAILED" ? 1 : 0;
 }
 
 main()

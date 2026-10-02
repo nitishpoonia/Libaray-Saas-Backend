@@ -515,3 +515,11 @@ Found while reviewing the PR stack, with each bug reproduced against a real Post
 
 - [x] **R6 · P2 · Missing `NODE_ENV` on Render runs the app in development mode silently.**
   **Status:** fixed in PR `feat/domain-rewrite`: the app refuses to start when `RENDER=true` (set by Render on every service) and `NODE_ENV` isn't `production`.
+
+- [x] **R7 · P1 · Two daily runs at once send every text twice.**
+  Where: `notifications/daily.ts` `runDailyJob`.
+  Problem: the run row was upserted to RUNNING even when a run was already in progress, and each notice is check-then-send, so a manual run during the scheduled one doubled every SMS (each costs money).
+  **Status:** fixed in PR `feat/daily-job-notifications`: the run is claimed in one `INSERT … ON CONFLICT … WHERE` statement; a second run exits with `ALREADY_RUNNING`. A run stuck for over an hour can be taken over. Tested.
+
+- [x] **R8 · P2 · Text sender took free text; Indian providers need template id + values.**
+  **Status:** fixed in PR `feat/daily-job-notifications`: `TextSender.send(phone, { template, vars, text })`. The templates are written with DLT `{#var#}` placeholders, ready to register. The overdue notice is two templates (with and without pending fees).

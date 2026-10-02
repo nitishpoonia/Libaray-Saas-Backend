@@ -2,6 +2,7 @@ import { env } from "../../config/env";
 import { getMessaging } from "../../lib/firebase";
 import { logger } from "../../lib/logger";
 import { prisma } from "../../lib/prisma";
+import type { TextMessage } from "./templates";
 
 /**
  * Where a message ends up. Each sender reports what happened; it never throws for a
@@ -12,9 +13,10 @@ export type SendResult =
   | { status: "SKIPPED"; reason: string }
   | { status: "FAILED"; reason: string };
 
+/** Sends a registered template with its values (see templates.ts). */
 export interface TextSender {
   channel: "SMS" | "WHATSAPP";
-  send(toPhone: string, text: string): Promise<SendResult>;
+  send(toPhone: string, message: TextMessage): Promise<SendResult>;
 }
 
 export interface PushSender {
@@ -28,8 +30,11 @@ export interface PushSender {
 export class LoggingTextSender implements TextSender {
   constructor(public readonly channel: "SMS" | "WHATSAPP") {}
 
-  async send(toPhone: string, text: string): Promise<SendResult> {
-    logger.info({ channel: this.channel, toPhone, text }, "Text notice (no provider configured)");
+  async send(toPhone: string, message: TextMessage): Promise<SendResult> {
+    logger.info(
+      { channel: this.channel, toPhone, template: message.template, text: message.text },
+      "Text notice (no provider configured)",
+    );
     return { status: "SKIPPED", reason: "No SMS/WhatsApp provider configured" };
   }
 }
