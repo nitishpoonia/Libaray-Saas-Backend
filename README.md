@@ -43,6 +43,24 @@ npm test
 
 Required environment variables are listed in `.env.example`. On Render, set `NODE_ENV=production` and `TRUST_PROXY=1`.
 
+### Daily job (Render Cron Job)
+
+A second Render service of type **Cron Job**, same repo and environment variables:
+
+| Setting | Value |
+|---|---|
+| Build command | `npm ci && npm run build` |
+| Command | `node dist/jobs/daily.js` |
+| Schedule | `30 3 * * *` (03:30 UTC = 09:00 IST) |
+
+Each run updates membership statuses, texts overdue students (once per period, plus a warning on the last reserved day) and pushes a digest to owners and managers. It's safe to run more than once a day: nothing is sent twice, and failed messages are retried on the next run. Every run is recorded in the `job_runs` table.
+
+If a run is started while another is still going (say, a manual run during the scheduled one), it exits without doing anything. A run stuck as RUNNING for over an hour counts as crashed, and the next run takes over.
+
+Student texts are DLT templates, defined in `src/modules/notifications/templates.ts` in the exact form to register (`{#var#}` placeholders). The SMS/WhatsApp sender gets the template name and the values in order.
+
+Student texts use `STUDENT_NOTICE_CHANNEL` (SMS or WhatsApp). Until a provider is connected (`TEXT_PROVIDER=none`), texts are logged and recorded as `SKIPPED`.
+
 ## API (v1)
 
 All routes are under `/v1`. Success responses are `{ data, meta? }`, errors are `{ error: { code, message, details? } }`. Dates are `YYYY-MM-DD` in the branch's timezone; times are 24-hour `HH:MM`; money is rupees.

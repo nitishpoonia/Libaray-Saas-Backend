@@ -144,7 +144,7 @@ These answers shape several fixes below.
   Where: `student/controller.ts:953–964`, `dashboard/controller.ts:25–32`.
   Problem: "overdue" is currently "end date is in the past", counted across *every* membership ever, including deleted students. The confirmed rule is fees unpaid, then a 7-day pause with the seat reserved, a day-6 warning to student and owner, and cancellation plus seat release on day 7. None of those steps exist: there's no paused state, no grace-period date, no day-6 message and no automatic release. Students also have no email field to send the warning to.
   Fix direction: A2 (membership state machine) and A3 (scheduled jobs).
-  **Status:** status part fixed in PR `feat/domain-rewrite` (OVERDUE, grace period, cancel on day 7, seat held meanwhile). Day-6 SMS/WhatsApp warning comes with the jobs PR.
+  **Status:** fixed across `feat/domain-rewrite` (statuses, seat held) and PR `feat/daily-job-notifications` (overdue text, day-6 warning to student, digest to owner).
 
 - [x] **B9 · P1 · Dashboard numbers are wrong.**
   Where: `dashboard/controller.ts`.
@@ -157,15 +157,17 @@ These answers shape several fixes below.
   Fix direction: 14 days. Also see A1: with branches, the trial probably belongs to the owner account, not to each library.
   **Status:** fixed in PR `feat/domain-rewrite`: 14-day trial on the owner's organization (`TRIAL_DAYS`).
 
-- [ ] **B11 · P1 · Expiry notification fires only once per membership, ever.**
+- [x] **B11 · P1 · Expiry notification fires only once per membership, ever.**
   Where: `notification/notificationController.ts:58–62`.
   Problem: the job skips any membership that already has an `expiry_within_7_days` log. Renewal extends the *same* membership row, so after the first renewal the owner is never warned again for that student.
   Fix direction: key the log on the membership *period* (see D2) or on the end date being warned about.
+  **Status:** fixed in PR `feat/daily-job-notifications`: notices are keyed by membership period, type, channel, recipient and date.
 
-- [ ] **B12 · P2 · "Expected renewal revenue" in notifications is inflated.**
+- [x] **B12 · P2 · "Expected renewal revenue" in notifications is inflated.**
   Where: `notification/notificationController.ts:99`.
   Problem: it sums `total_fee`, which keeps growing with every renewal (`student/controller.ts:579`). A student renewed 5 times counts 6 fees.
   Fix direction: use the fee of the latest period.
+  **Status:** fixed in PR `feat/daily-job-notifications`: each period has its own fee, so renewal amounts are real.
 
 - [x] **B13 · P2 · Receipt numbers can collide.**
   Where: `utils/receiptUtils.ts`.
@@ -351,10 +353,11 @@ Grouping by feature module is the right starting point. The problems are inside 
   Fix direction: separate `dev`, `build` (typecheck plus compile), `start` (run compiled output) and a `postinstall` or build step for `prisma generate`.
   **Status:** fixed in PR `chore/foundation`: `dev`, `build` (prisma generate + tsup), `start` (node dist). See README for Render settings.
 
-- [ ] **O4 · P1 · The scheduled job lives inside the web server.**
+- [x] **O4 · P1 · The scheduled job lives inside the web server.**
   Where: `server.ts:10`, `jobs/membershipExpiry.ts`.
   Problem: if the Render instance is asleep at 09:00, the job doesn't run. If you ever run 2 instances, it runs twice. There's no record of whether a day's run finished.
   Fix direction: A3.
+  **Status:** fixed in PR `feat/daily-job-notifications`: `dist/jobs/daily.js` runs as a Render Cron Job; runs are recorded in `job_runs`.
 
 - [ ] **O5 · P2 · Logging is `console.log` only.**
   No log levels, no request id, no error tracking. Debugging a user complaint means scrolling raw logs.
@@ -414,19 +417,19 @@ ACTIVE ──period ends, not renewed──> OVERDUE (seat reserved) ──day 7
 
 ### A3 · Scheduled jobs · P1
 
-- [ ] Move daily work out of the web process into a separate scheduled job (a Render cron job or worker) that runs the same code.
-- [ ] Daily job steps, each safe to run twice (idempotent):
+- [x] Move daily work out of the web process into a separate scheduled job (a Render cron job or worker) that runs the same code.
+- [x] Daily job steps, each safe to run twice (idempotent):
   1. ACTIVE → PAUSED when fees are due and unpaid.
   2. Send the day-6 warning (to student and owner) for PAUSED memberships.
   3. PAUSED → CANCELLED on day 7, releasing the seat.
   4. Expiry reminders to owners.
-- [ ] Record each run (date, step, counts, errors) so a missed or failed day is visible and can be re-run.
-- [ ] Every "already notified?" check is keyed by membership period plus notification type plus the date it refers to, not by membership alone (B11).
+- [x] Record each run (date, step, counts, errors) so a missed or failed day is visible and can be re-run.
+- [x] Every "already notified?" check is keyed by membership period plus notification type plus the date it refers to, not by membership alone (B11).
 
 ### A4 · Messaging · P1
 
-- [ ] One notification service with channels behind it: push to owners (FCM, already there), plus a channel that reaches students for the day-6 warning (email, SMS or WhatsApp, see Q2).
-- [ ] Sending is retried on failure and logged per recipient. The current loop marks nothing when FCM fails and never retries.
+- [x] One notification service with channels behind it: push to owners (FCM, already there), plus a channel that reaches students for the day-6 warning (email, SMS or WhatsApp, see Q2).
+- [x] Sending is retried on failure and logged per recipient. The current loop marks nothing when FCM fails and never retries.
 
 ### A5 · Time and money rules · P1
 
@@ -512,6 +515,14 @@ Found while reviewing the PR stack, with each bug reproduced against a real Post
 
 - [x] **R6 · P2 · Missing `NODE_ENV` on Render runs the app in development mode silently.**
   **Status:** fixed in PR `feat/domain-rewrite`: the app refuses to start when `RENDER=true` (set by Render on every service) and `NODE_ENV` isn't `production`.
+
+- [x] **R7 · P1 · Two daily runs at once send every text twice.**
+  Where: `notifications/daily.ts` `runDailyJob`.
+  Problem: the run row was upserted to RUNNING even when a run was already in progress, and each notice is check-then-send, so a manual run during the scheduled one doubled every SMS (each costs money).
+  **Status:** fixed in PR `feat/daily-job-notifications`: the run is claimed in one `INSERT … ON CONFLICT … WHERE` statement; a second run exits with `ALREADY_RUNNING`. A run stuck for over an hour can be taken over. Tested.
+
+- [x] **R8 · P2 · Text sender took free text; Indian providers need template id + values.**
+  **Status:** fixed in PR `feat/daily-job-notifications`: `TextSender.send(phone, { template, vars, text })`. The templates are written with DLT `{#var#}` placeholders, ready to register. The overdue notice is two templates (with and without pending fees).
 
 - [x] **R13 · P2 · Staff could see every payment in the branch.**
   Problem: the dashboard hid finance from STAFF, but `GET /payments` listed every payment with amounts.

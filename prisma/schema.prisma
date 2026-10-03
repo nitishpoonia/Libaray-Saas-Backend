@@ -75,6 +75,8 @@ enum NotificationType {
   OVERDUE_NOTICE
   CANCELLATION_WARNING
   MEMBERSHIP_CANCELLED
+  /// One push per branch per day to the owner and managers.
+  DAILY_DIGEST
 }
 
 enum NotificationStatus {
