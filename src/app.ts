@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import express, { Router } from "express";
+import cors from "cors";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import { env } from "./config/env";
@@ -8,6 +9,7 @@ import { prisma } from "./lib/prisma";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { generalLimiter } from "./middleware/rateLimiters";
 import { simulateLatency } from "./middleware/simulateLatency";
+import { adminRouter } from "./modules/admin/routes";
 import authRoutes from "./modules/auth/routes";
 import { billingRouter, billingWebhook } from "./modules/billing/routes";
 import dashboardRoutes from "./modules/dashboard/routes";
@@ -28,6 +30,10 @@ export function createApp() {
   app.set("trust proxy", env.TRUST_PROXY);
 
   app.use(helmet());
+
+  // Browser apps (owner dashboard, admin panel) on their own domains. Only origins in
+  // CORS_ORIGINS get an answer the browser will accept; the mobile app isn't affected.
+  app.use(cors({ origin: env.CORS_ORIGINS, maxAge: 600 }));
 
   // One request id per request, reused from the proxy header when present,
   // attached to every log line and returned so a user report can be traced.
@@ -61,6 +67,8 @@ export function createApp() {
   app.use(generalLimiter);
 
   app.use("/v1", apiV1());
+  // Platform admin, for the people who run the SaaS (separate login and tokens).
+  app.use("/admin/v1", adminRouter());
 
   app.use(notFoundHandler);
   app.use(errorHandler);

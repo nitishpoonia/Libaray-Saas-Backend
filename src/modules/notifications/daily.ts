@@ -38,9 +38,10 @@ export async function runDailyForLibrary(
 
   const org = await prisma.organization.findUniqueOrThrow({
     where: { id: library.organizationId },
-    select: { ownerId: true, subscriptionStatus: true, trialEndsAt: true, currentPeriodEnd: true },
+    select: { ownerId: true, subscriptionStatus: true, trialEndsAt: true, currentPeriodEnd: true, suspendedAt: true },
   });
-  // SMS costs money per message: only for branches whose subscription is usable.
+  // SMS costs money per message: only for branches whose subscription is usable
+  // (not for suspended accounts either).
   const textsAllowed = isSubscriptionUsable(org, now);
 
   const overdue = await prisma.membership.findMany({

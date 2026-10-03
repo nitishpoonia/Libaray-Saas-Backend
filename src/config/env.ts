@@ -5,6 +5,10 @@ import { z } from "zod";
 // and dotenv never overrides a value that is already set.
 dotenv.config({ quiet: true });
 
+/** An optional value where an empty string (as copied from .env.example) means "not set". */
+const optional = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -47,6 +51,22 @@ const envSchema = z
     // push notifications are skipped and logged instead.
     FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
 
+    // Platform admin API (/admin/v1). Both must be set to turn it on; without them it answers 503.
+    // A different secret from JWT_SECRET, so a customer token can never pass as an admin one.
+    ADMIN_JWT_SECRET: optional(z.string().min(32, "ADMIN_JWT_SECRET must be at least 32 characters")),
+    // 32 random bytes, base64 (openssl rand -base64 32). Encrypts admins' 2FA secrets in the database.
+    ADMIN_TOTP_KEY: optional(
+      z.string().refine((v) => Buffer.from(v, "base64").length === 32, "ADMIN_TOTP_KEY must be 32 bytes, base64"),
+    ),
+    ADMIN_SESSION_HOURS: z.coerce.number().int().min(1).max(24).default(8),
+
+    // Browser apps allowed to call the API (owner dashboard, admin panel), comma-separated:
+    // https://app.example.in,https://admin.example.in. The mobile app doesn't need CORS.
+    CORS_ORIGINS: z
+      .string()
+      .default("")
+      .transform((v) => v.split(",").map((o) => o.trim()).filter(Boolean)),
+
     // Render sets RENDER=true on every service. Used only to catch a missing NODE_ENV.
     RENDER: z.string().optional(),
   })
@@ -55,6 +75,14 @@ const envSchema = z
   .refine((env) => !(env.RENDER === "true" && env.NODE_ENV !== "production"), {
     message: "Set NODE_ENV=production on Render",
     path: ["NODE_ENV"],
+  })
+  .refine((env) => Boolean(env.ADMIN_JWT_SECRET) === Boolean(env.ADMIN_TOTP_KEY), {
+    message: "Set both ADMIN_JWT_SECRET and ADMIN_TOTP_KEY, or neither",
+    path: ["ADMIN_TOTP_KEY"],
+  })
+  .refine((env) => env.ADMIN_JWT_SECRET !== env.JWT_SECRET, {
+    message: "ADMIN_JWT_SECRET must differ from JWT_SECRET",
+    path: ["ADMIN_JWT_SECRET"],
   })
   // With keys but no webhook secret every webhook fails its signature check, and
   // Razorpay quietly disables the webhook after repeated failures.
