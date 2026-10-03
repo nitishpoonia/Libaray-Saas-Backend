@@ -3,6 +3,7 @@ import { logger } from "../../lib/logger";
 import { money, toRupees } from "../../lib/money";
 import { prisma } from "../../lib/prisma";
 import { isSubscriptionUsable } from "../../middleware/subscription";
+import { runSubscriptionSweep } from "../billing/sweep";
 import { syncLifecycle } from "../memberships/lifecycle";
 import type { PushSender, TextSender } from "./channels";
 import { deliverOnce, type Delivery } from "./deliver";
@@ -199,9 +200,19 @@ export async function runDailyJob(senders: Senders, now = new Date()) {
   const runId = await claimRun(runDate, now);
   if (runId === null) {
     logger.warn({ runDate }, "Daily job is already running; skipped");
-    return { status: "ALREADY_RUNNING" as const, libraries: 0, results: [], failures: [] };
+    return { status: "ALREADY_RUNNING" as const, libraries: 0, subscriptions: null, results: [], failures: [] };
   }
   const run = { id: runId };
+
+  // Before the branches, so texts are only sent for subscriptions that are still usable.
+  let subscriptions: Awaited<ReturnType<typeof runSubscriptionSweep>> | null = null;
+  const failures: Array<{ libraryId: number | null; error: string }> = [];
+  try {
+    subscriptions = await runSubscriptionSweep(senders.push, now);
+  } catch (err) {
+    logger.error({ err }, "Subscription sweep failed");
+    failures.push({ libraryId: null, error: err instanceof Error ? err.message : String(err) });
+  }
 
   const libraries = await prisma.library.findMany({
     select: { id: true, name: true, timezone: true, gracePeriodDays: true, organizationId: true },
@@ -209,7 +220,6 @@ export async function runDailyJob(senders: Senders, now = new Date()) {
   });
 
   const results: LibraryRunStats[] = [];
-  const failures: Array<{ libraryId: number; error: string }> = [];
   for (const library of libraries) {
     try {
       results.push(await runDailyForLibrary(library, senders, now));
@@ -221,14 +231,14 @@ export async function runDailyJob(senders: Senders, now = new Date()) {
 
   const failedNotices = results.reduce((n, r) => n + r.notices.FAILED, 0);
   const status = failures.length || failedNotices ? "FAILED" : "SUCCEEDED";
-  const stats = { libraries: libraries.length, results, failures };
+  const stats = { libraries: libraries.length, subscriptions, results, failures };
 
   await prisma.jobRun.update({
     where: { id: run.id },
     data: {
       status,
       stats: JSON.parse(JSON.stringify(stats)),
-      error: failures.length ? `${failures.length} branch(es) failed` : failedNotices ? `${failedNotices} notice(s) failed` : null,
+      error: failures.length ? `${failures.length} step(s) failed` : failedNotices ? `${failedNotices} notice(s) failed` : null,
       finishedAt: new Date(),
     },
   });
