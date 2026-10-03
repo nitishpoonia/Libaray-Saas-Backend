@@ -244,7 +244,12 @@ export function unsuspend(id: number, ctx: ActionContext) {
   });
 }
 
-/** Logs the owner out on every device (e.g. a lost phone). Their access tokens expire within minutes. */
+/**
+ * Logs the owner out on every device (e.g. a lost phone): ends every session and forgets
+ * every push token, as the owner's own "sign out on all phones" does. Without the token
+ * delete, the lost phone would keep getting the daily summary. Access tokens already
+ * issued expire within minutes.
+ */
 export function revokeOwnerSessions(id: number, ctx: ActionContext, now = new Date()) {
   return prisma.$transaction(async (tx) => {
     const org = await lockOrganization(tx, id);
@@ -252,15 +257,16 @@ export function revokeOwnerSessions(id: number, ctx: ActionContext, now = new Da
       where: { userId: org.ownerId, revokedAt: null },
       data: { revokedAt: now },
     });
+    const devices = await tx.deviceToken.deleteMany({ where: { userId: org.ownerId } });
     await audit(tx, {
       adminId: ctx.adminId,
       action: "organization.revoke_sessions",
       targetType: "organization",
       targetId: id,
-      after: { sessionsRevoked: count },
+      after: { sessionsRevoked: count, pushDevicesRemoved: devices.count },
       reason: ctx.reason,
       ip: ctx.ip,
     });
-    return { sessionsRevoked: count };
+    return { sessionsRevoked: count, pushDevicesRemoved: devices.count };
   });
 }

@@ -185,12 +185,19 @@ describe("admin: organizations", () => {
     const phone = nextPhone();
     const signup = await api().post("/v1/auth/signup").send({ name: "Lost Phone", identifier: phone, password: "password123" });
     const org = await prisma.organization.findFirstOrThrow({ where: { ownerId: signup.body.data.userId } });
+    await api()
+      .post("/v1/me/devices")
+      .set(auth(signup.body.data.accessToken))
+      .send({ token: "fcm-token-lost-phone", platform: "ANDROID" });
 
     const res = await api()
       .post(`/admin/v1/organizations/${org.id}/revoke-sessions`)
       .set(auth(token))
       .send({ reason: "Owner lost their phone" });
     expect(res.body.data.sessionsRevoked).toBe(1);
+    // The lost phone stops getting push notifications too.
+    expect(res.body.data.pushDevicesRemoved).toBe(1);
+    expect(await prisma.deviceToken.count({ where: { userId: signup.body.data.userId } })).toBe(0);
     const refresh = await api().post("/v1/auth/refresh").send({ refreshToken: signup.body.data.refreshToken });
     expect(refresh.status).toBe(401);
   });
