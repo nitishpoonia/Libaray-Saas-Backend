@@ -1,22 +1,20 @@
-import { prisma } from "../../utils/prisma";
-import dotenv from "dotenv";
+import { prisma } from "../../lib/prisma";
 import { Request, Response } from "express";
-import admin from "../../config/firebase.js";
+import { getMessaging } from "../../lib/firebase";
+import { logger } from "../../lib/logger";
 import dayjs from "dayjs";
-import utc from "dayjs/plugin/utc";
+import utc from "dayjs/plugin/utc.js";
 dayjs.extend(utc);
-dotenv.config();
 
 export const registerNotificationToken = async (
   req: Request,
   res: Response,
 ) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.id) return res.status(401).json({ error: "Unauthorized" });
 
     const body = req.body ?? {};
-    console.log("BOdy in notification controller", body);
     const { token } = body;
 
     if (!token) {
@@ -70,10 +68,8 @@ export const processExpiringMembershipNotifications = async () => {
     },
   });
 
-  console.log("Memberships found:", memberships.length);
 
   if (memberships.length === 0) {
-    console.log("No memberships expiring in next 7 days");
     return { successCount: 0, failureCount: 0 };
   }
 
@@ -101,7 +97,6 @@ export const processExpiringMembershipNotifications = async () => {
   }
 
   if (!libraryMap.size) {
-    console.log("No owners eligible for notification");
     return { successCount: 0, failureCount: 0 };
   }
 
@@ -124,7 +119,12 @@ export const processExpiringMembershipNotifications = async () => {
     };
 
     try {
-      await admin.messaging().send(message);
+      const messaging = getMessaging();
+      if (!messaging) {
+        logger.info({ libraryId, count: data.count }, "Push disabled; skipped notification");
+        continue;
+      }
+      await messaging.send(message);
       successCount++;
 
       for (const membershipId of data.membershipIds) {
@@ -137,20 +137,18 @@ export const processExpiringMembershipNotifications = async () => {
         });
       }
     } catch (error) {
-      console.error("FCM Error:", error);
+      logger.error({ err: error, libraryId }, "FCM send failed");
       failureCount++;
     }
   }
 
-  console.log(
-    `Notifications processed — Success: ${successCount}, Failed: ${failureCount}`,
-  );
+  logger.info({ successCount, failureCount }, "Expiry notifications processed");
   return { successCount, failureCount };
 };
 
 // ✅ Express route handler — calls core logic, sends HTTP response
 export const notifyLibraryOwnersForExpiringMemberships = async (
-  req: Request,
+  _req: Request,
   res: Response,
 ) => {
   try {

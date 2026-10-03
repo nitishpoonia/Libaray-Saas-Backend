@@ -1,11 +1,11 @@
 import express from "express";
-import { authMiddleware } from "../../middleware/auth.js";
+import { authMiddleware } from "../../middleware/auth";
 import {
   createLibrary,
   getLibraries,
   getLibraryOverview,
   updateLibrary,
-} from "./controller.js";
+} from "./controller";
 
 const router = express.Router();
 router.use(authMiddleware);

@@ -42,20 +42,23 @@ These answers shape several fixes below.
   Problem: any logged-in owner can call this, and it runs the global job that notifies every owner in the system.
   Fix direction: remove it from production, or restrict it to an admin role.
 
-- [ ] **S4 · P0 · Database URL printed to logs.**
+- [x] **S4 · P0 · Database URL printed to logs.**
   Where: `utils/prisma.ts:9`.
   Problem: the full connection string, including the password, is written to Render's logs on every boot.
   Fix direction: remove the log. If anyone else could have seen those logs, rotate the database password.
+  **Status:** fixed in PR `chore/foundation`. Still rotate the DB password if old logs were visible to anyone.
 
-- [ ] **S5 · P0 · Login logs the plain-text password.**
+- [x] **S5 · P0 · Login logs the plain-text password.**
   Where: `auth/loginController.ts:20` (`console.log("boyd", body)`).
   Problem: the request body with the password is written to logs. `library/controller.ts:18` and `student/controller.ts:78` log full bodies too.
   Fix direction: remove body logging. Use a logger that redacts sensitive fields (password, token, phone).
+  **Status:** fixed in PR `chore/foundation`: body logs removed, pino logger redacts passwords, tokens and auth headers.
 
-- [ ] **S6 · P1 · Rate limiting breaks behind Render's proxy.**
+- [x] **S6 · P1 · Rate limiting breaks behind Render's proxy.**
   Where: `app.ts` (no `trust proxy` setting), `middleware/rateLimiters.ts`.
   Problem: on Render, every request reaches Express from the proxy. Without `trust proxy`, the limiter can see the same IP for all users, so 5 login attempts in 10 minutes could be shared by *everyone*. `generalRateLimiter` is defined but never used.
   Fix direction: set `trust proxy` to match Render's proxy hop count, and apply the general limiter to authenticated routes.
+  **Status:** fixed in PR `chore/foundation`: `TRUST_PROXY` env (set 1 on Render), general limiter on all routes.
 
 - [ ] **S7 · P1 · Tokens can't be revoked.**
   Where: `auth/controller.ts:83`, `auth/loginController.ts:55`, `auth/logoutController.ts`.
@@ -72,10 +75,11 @@ These answers shape several fixes below.
   Problem: signup requires 8+ characters, but change-password accepts any length.
   Fix direction: one shared password rule used by both.
 
-- [ ] **S10 · P2 · `delayMiddleware` runs on every request, with no environment check.**
+- [x] **S10 · P2 · `delayMiddleware` runs on every request, with no environment check.**
   Where: `app.ts:14`.
   Problem: it's meant for local testing only, but nothing in the code stops it from running in production. Every API call would be 2 seconds slower.
   Fix direction: enable it only when an explicit local-only environment flag is set.
+  **Status:** fixed in PR `chore/foundation`: replaced by `SIMULATE_LATENCY_MS`, which config refuses in production.
 
 ---
 
@@ -260,25 +264,32 @@ Grouping by feature module is the right starting point. The problems are inside 
 
 - [ ] **C2 · P2 · No validation library.**
   Validation is hand-written `if` chains, which are inconsistent and miss types (`seat_number` arrives as string or number, `booked_for` isn't checked for negatives or decimals). `zod` or similar at the route edge gives typed, validated input and consistent 400 errors.
+  **Status:** started in PR `chore/foundation`: zod installed and wired into the error handler; each route gets a schema in the modules rewrite.
 
-- [ ] **C3 · P2 · No central error handling.**
+- [x] **C3 · P2 · No central error handling.**
   Every handler has its own try/catch that returns a 500 with a different message. Known errors (not found, conflict, unique violation) should become typed errors turned into responses in one error middleware.
+  **Status:** fixed in PR `chore/foundation`: central error handler with one error shape; controllers move to it in the modules rewrite.
 
 - [ ] **C4 · P2 · Type safety is switched off where it matters.**
   `(req as any).user` appears in every controller, the `where` objects are `any`, and the JWT payload is untyped. Extend Express's `Request` type once with `user` and `library`.
+  **Status:** partly fixed in PR `chore/foundation`: `req.user` is typed; remaining `any` goes in the modules rewrite.
 
-- [ ] **C5 · P2 · Config and environment handling is scattered.**
+- [x] **C5 · P2 · Config and environment handling is scattered.**
   `dotenv.config()` is called in 8 files. `process.env.JWT_SECRET!` assumes the value exists, so a missing secret only fails when the first user logs in.
   Fix direction: one config module that reads and validates all environment variables at startup and refuses to boot if one is missing.
+  **Status:** fixed in PR `chore/foundation`: `src/config/env.ts` validates everything at boot.
 
-- [ ] **C6 · P3 · Mixed module styles.**
+- [x] **C6 · P3 · Mixed module styles.**
   `config/firebase.js` is JavaScript in a TypeScript project. Imports mix `./x.js` and `./x` in an ESM package, which works under `tsx` but will break with a real `tsc` build.
+  **Status:** fixed in PR `chore/foundation`: Firebase moved to TypeScript, imports normalised, bundled with tsup.
 
-- [ ] **C7 · P3 · Dead and leftover code.**
+- [x] **C7 · P3 · Dead and leftover code.**
   Unused imports (`error`, `log` from `console` in `library/controller.ts:4`, `expenses/controller.ts:4`), the commented-out trial block in `auth/controller.ts:64–70`, `console.log("*****")` in the dashboard, an empty slot in `Promise.all` at `expenses/controller.ts:124`, unused `ts-node`, `expo-server-sdk` and `generalRateLimiter`.
+  **Status:** fixed in PR `chore/foundation`.
 
 - [ ] **C8 · P2 · No tests.**
   The most bug-prone logic (slot overlap, membership state transitions, fee math, receipt numbers) is pure logic and easy to unit test. B1 would have been caught by a single test.
+  **Status:** started in PR `chore/foundation`: Vitest set up; domain tests come with each fix.
 
 ---
 
@@ -288,15 +299,18 @@ Grouping by feature module is the right starting point. The problems are inside 
   Where: `.gitignore:11` ignores `prisma/migrations`.
   Problem: `migrate:prod` runs `prisma migrate deploy`, which needs the migration files from the repo. Without them, production schema changes are applied by hand or with `db push`, with no history and no safe way to change a column without data loss.
   Fix direction: commit the migrations folder, and apply migrations in production only through `migrate deploy`.
+  **Status:** partly fixed in PR `chore/foundation`: migrations folder no longer ignored; the baseline migration comes with the schema redesign.
 
-- [ ] **O2 · P1 · Lock files aren't in git.**
+- [x] **O2 · P1 · Lock files aren't in git.**
   Where: `.gitignore:42–44`.
   Problem: every deploy can install different dependency versions than you tested with.
+  **Status:** fixed in PR `chore/foundation`: `package-lock.json` committed.
 
-- [ ] **O3 · P1 · Production runs in watch mode with no build step.**
+- [x] **O3 · P1 · Production runs in watch mode with no build step.**
   Where: `package.json` `start` is `tsx watch src/server.ts`.
   Problem: watch mode is for development. There's no `build`, no type check before deploy, and `prisma generate` isn't in any script.
   Fix direction: separate `dev`, `build` (typecheck plus compile), `start` (run compiled output) and a `postinstall` or build step for `prisma generate`.
+  **Status:** fixed in PR `chore/foundation`: `dev`, `build` (prisma generate + tsup), `start` (node dist). See README for Render settings.
 
 - [ ] **O4 · P1 · The scheduled job lives inside the web server.**
   Where: `server.ts:10`, `jobs/membershipExpiry.ts`.
@@ -306,9 +320,11 @@ Grouping by feature module is the right starting point. The problems are inside 
 - [ ] **O5 · P2 · Logging is `console.log` only.**
   No log levels, no request id, no error tracking. Debugging a user complaint means scrolling raw logs.
   Fix direction: a structured logger with redaction (S5), a request-id middleware, and an error tracker.
+  **Status:** partly fixed in PR `chore/foundation`: structured logger with redaction and request ids. Error tracker still to add.
 
-- [ ] **O6 · P2 · No CI.**
+- [x] **O6 · P2 · No CI.**
   Nothing runs lint, typecheck or tests on push.
+  **Status:** fixed in PR `chore/foundation`: GitHub Actions runs typecheck, tests and build.
 
 - [ ] **O7 · P2 · Backups and data retention are undefined.**
   Student phone numbers and payment records are personal data. There's no stated backup policy, and no flow to export or delete an owner's data when they leave. India's Digital Personal Data Protection Act applies to this kind of data, so check what it requires.

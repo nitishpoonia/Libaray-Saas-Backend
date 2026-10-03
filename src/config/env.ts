@@ -1,0 +1,51 @@
+import dotenv from "dotenv";
+import { z } from "zod";
+
+// Load .env for local development. On Render the variables are injected directly,
+// and dotenv never overrides a value that is already set.
+dotenv.config({ quiet: true });
+
+const envSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    PORT: z.coerce.number().int().positive().default(3000),
+    LOG_LEVEL: z
+      .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
+      .default("info"),
+
+    DATABASE_URL: z.string().url(),
+
+    // At least 32 characters so the signing key can't be brute-forced.
+    JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+
+    // Number of proxies in front of the app. Render has one.
+    TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+
+    // Local-only: delay every request to feel real-world latency. Refused in production below.
+    SIMULATE_LATENCY_MS: z.coerce.number().int().min(0).default(0),
+
+    // Firebase service account JSON as a single-line string. Optional: without it,
+    // push notifications are skipped and logged instead.
+    FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
+  })
+  .refine((env) => !(env.NODE_ENV === "production" && env.SIMULATE_LATENCY_MS > 0), {
+    message: "SIMULATE_LATENCY_MS must be 0 in production",
+    path: ["SIMULATE_LATENCY_MS"],
+  });
+
+export type Env = z.infer<typeof envSchema>;
+
+export function parseEnv(source: NodeJS.ProcessEnv): Env {
+  const result = envSchema.safeParse(source);
+  if (!result.success) {
+    // Fail at boot, not when the first user hits a route that needs the value.
+    const problems = result.error.issues
+      .map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`)
+      .join("\n");
+    throw new Error(`Invalid environment configuration:\n${problems}`);
+  }
+  return result.data;
+}
+
+export const env = parseEnv(process.env);
+export const isProduction = env.NODE_ENV === "production";

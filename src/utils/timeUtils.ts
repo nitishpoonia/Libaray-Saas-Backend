@@ -1,13 +1,5 @@
 // utils/timeUtils.ts
 
-interface TimeSlot {
-  start_hour: number;
-  start_minute: number;
-  end_hour: number;
-  end_minute: number;
-  crosses_midnight: boolean;
-}
-
 /**
  * Converts time components to total minutes since midnight
  */

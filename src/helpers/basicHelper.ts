@@ -1,4 +1,3 @@
-import dayjs from "dayjs";
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const phoneRegex = /^\+91[6-9]\d{9}$/;
 
@@ -23,10 +22,8 @@ export function formatTimeSingle(date: Date) {
 }
 
 export function parseTime(time: string) {
-  console.log("Time in request", time);
 
   const [hour, minute] = time.split(":").map(Number);
-  console.log("Hour", "minute", hour, minute);
 
   const base = new Date();
   base.setHours(hour, minute, 0, 0);

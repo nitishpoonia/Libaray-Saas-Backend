@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { createLibraryOwner } from "./controller.js";
-import { loginLibraryOwner } from "./loginController.js";
-import { logoutLibraryOwner } from "./logoutController.js";
-import { authMiddleware } from "../../middleware/auth.js";
-import { authLimiter } from "../../middleware/rateLimiters.js";
+import { createLibraryOwner } from "./controller";
+import { loginLibraryOwner } from "./loginController";
+import { logoutLibraryOwner } from "./logoutController";
+import { authMiddleware } from "../../middleware/auth";
+import { authLimiter } from "../../middleware/rateLimiters";
 
 const router = Router();
 
