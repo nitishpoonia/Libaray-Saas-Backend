@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as authService from "../../src/modules/auth/service";
+import { prisma } from "../../src/lib/prisma";
 import { api, auth, nextPhone, resetDb } from "./helpers";
 
 beforeEach(resetDb);
@@ -73,6 +74,31 @@ describe("auth", () => {
 
     expect((await api().post("/v1/auth/refresh").send({ refreshToken: deviceB.body.data.refreshToken })).status).toBe(401);
     expect((await api().post("/v1/auth/refresh").send({ refreshToken: deviceA.body.data.refreshToken })).status).toBe(200);
+  });
+
+  it("signs out every phone and forgets their push tokens on logout-all", async () => {
+    const phone = nextPhone();
+    const deviceA = await api().post("/v1/auth/signup").send({ name: "Asha", identifier: phone, password: "password123" });
+    const lostPhone = await api().post("/v1/auth/login").send({ identifier: phone, password: "password123" });
+    for (const [session, token] of [
+      [deviceA, "fcm-token-a"],
+      [lostPhone, "fcm-token-lost"],
+    ] as const) {
+      const registered = await api()
+        .post("/v1/me/devices")
+        .set(auth(session.body.data.accessToken))
+        .send({ token, platform: "ANDROID" });
+      expect(registered.status).toBe(204);
+    }
+
+    const all = await api().post("/v1/auth/logout-all").set(auth(deviceA.body.data.accessToken)).send({});
+    expect(all.status).toBe(204);
+
+    for (const session of [deviceA, lostPhone]) {
+      expect((await api().post("/v1/auth/refresh").send({ refreshToken: session.body.data.refreshToken })).status).toBe(401);
+    }
+    // The lost phone no longer gets the owner's notifications.
+    expect(await prisma.deviceToken.count({ where: { userId: deviceA.body.data.userId } })).toBe(0);
   });
 
   it("lets only one of several simultaneous refreshes with the same token succeed", async () => {
