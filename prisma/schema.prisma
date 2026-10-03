@@ -1,3 +1,14 @@
+// Library SaaS data model.
+//
+// Tenancy: an Organization (the owner's business) has one subscription and many
+// Libraries (branches). Everything a branch owns carries libraryId, and every request
+// resolves the branch through one access check (see src/middleware/libraryAccess.ts).
+//
+// Conventions: models are singular PascalCase, fields camelCase in code and
+// snake_case in the database (@map), tables are plural snake_case (@@map).
+// Money is Decimal(10,2). Calendar dates (membership periods, expense dates) are
+// DATE columns holding the date in the library's own timezone.
+
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -7,143 +18,371 @@ datasource db {
   provider = "postgresql"
 }
 
-model LibraryOwner {
-  id                    Int      @id @default(autoincrement())
-  name                  String
-  email                 String?  @unique
-  phone                 String?  @unique
-  joined_date           DateTime
-  password_hash         String
-  expo_push_token       String?
-  notifications_enabled Boolean  @default(true)
-  updated_at            DateTime @updatedAt
-  created_at            DateTime @default(now())
-  library               Library?
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  EXPIRED
+  CANCELLED
 }
 
+/// Branch-level roles for staff logins. The organization owner has full access
+/// to every branch without a row here.
+enum StaffRole {
+  MANAGER
+  STAFF
+}
+
+/// Lifecycle of one membership period.
+/// ACTIVE    - period is running (or starts in the future after a renewal)
+/// OVERDUE   - period ended without renewal; seat stays reserved during the grace period
+/// COMPLETED - period ended and the student renewed (a newer period continues it)
+/// CANCELLED - grace period ran out, or the student was removed; seat released
+enum MembershipStatus {
+  ACTIVE
+  OVERDUE
+  COMPLETED
+  CANCELLED
+}
+
+enum CancelReason {
+  NOT_RENEWED
+  REMOVED
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  CARD
+  BANK_TRANSFER
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+}
+
+enum NotificationChannel {
+  PUSH
+  SMS
+  WHATSAPP
+}
+
+enum NotificationType {
+  EXPIRY_REMINDER
+  OVERDUE_NOTICE
+  CANCELLATION_WARNING
+  MEMBERSHIP_CANCELLED
+}
+
+enum NotificationStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum JobRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+// ─── Accounts ───────────────────────────────────────────────────────────────
+
+/// Anyone who can log in: owners and branch staff.
+model User {
+  id                   Int      @id @default(autoincrement())
+  name                 String
+  email                String?  @unique
+  /// E.164, e.g. +919876543210
+  phone                String?  @unique
+  passwordHash         String   @map("password_hash")
+  notificationsEnabled Boolean  @default(true) @map("notifications_enabled")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  ownedOrganization Organization?
+  staffAssignments  LibraryStaff[]
+  deviceTokens      DeviceToken[]
+  sessions          Session[]
+
+  @@map("users")
+}
+
+/// A logged-in device. The app holds a short-lived access token plus this session's
+/// refresh token; only the refresh token's hash is stored. Revoking the session
+/// (logout, password change) stops that device from getting new access tokens.
+model Session {
+  id               Int       @id @default(autoincrement())
+  userId           Int       @map("user_id")
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// The owner's business. Holds the single subscription for all its branches.
+model Organization {
+  id                 Int                @id @default(autoincrement())
+  ownerId            Int                @unique @map("owner_id")
+  subscriptionStatus SubscriptionStatus @default(TRIALING) @map("subscription_status")
+  trialEndsAt        DateTime           @map("trial_ends_at")
+  /// End of the paid period; null while trialing.
+  currentPeriodEnd   DateTime?          @map("current_period_end")
+  /// Number of branches the subscription is billed for.
+  billedBranches     Int                @default(1) @map("billed_branches")
+  razorpayCustomerId     String?        @unique @map("razorpay_customer_id")
+  razorpaySubscriptionId String?        @unique @map("razorpay_subscription_id")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  owner     User      @relation(fields: [ownerId], references: [id])
+  libraries Library[]
+
+  @@map("organizations")
+}
+
+/// A branch.
 model Library {
-  id                 Int       @id @default(autoincrement())
-  library_owner_id   Int       @unique
-  name               String?
-  address            String?
-  subscription_start DateTime?
-  subscription_end   DateTime?
-  plan_type          String?
-  status             String // trial/active/expired
-  created_at         DateTime  @default(now())
-  updated_at         DateTime  @updatedAt
+  id              Int      @id @default(autoincrement())
+  organizationId  Int      @map("organization_id")
+  name            String
+  address         String
+  /// IANA timezone used for "today" and period boundaries.
+  timezone        String   @default("Asia/Kolkata")
+  /// Days an overdue membership keeps its seat before it's cancelled.
+  gracePeriodDays Int      @default(7) @map("grace_period_days")
+  /// Next receipt sequence number, incremented atomically inside payment transactions.
+  nextReceiptSeq  Int      @default(1) @map("next_receipt_seq")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  owner            LibraryOwner      @relation(fields: [library_owner_id], references: [id])
-  seats            Seats[]
-  students         Students[]
-  memberships      Memberships[]
-  expenses         Expenses[]
-  payments         Payments[]
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  staff            LibraryStaff[]
+  seats            Seat[]
+  students         Student[]
+  memberships      Membership[]
+  payments         Payment[]
+  expenses         Expense[]
   notificationLogs NotificationLog[]
 
-  @@index([library_owner_id])
+  @@index([organizationId])
+  @@map("libraries")
 }
 
-model Seats {
-  id          Int      @id @default(autoincrement())
-  library_id  Int
-  seat_number String
-  has_locker  Boolean
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+model LibraryStaff {
+  id        Int       @id @default(autoincrement())
+  libraryId Int       @map("library_id")
+  userId    Int       @map("user_id")
+  role      StaffRole
+  createdAt DateTime  @default(now()) @map("created_at")
 
-  library     Library       @relation(fields: [library_id], references: [id])
-  memberships Memberships[]
+  library Library @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([library_id, seat_number])
+  @@unique([libraryId, userId])
+  @@index([userId])
+  @@map("library_staff")
 }
 
-model Students {
-  id         Int      @id @default(autoincrement())
-  library_id Int
+// ─── Seats and students ─────────────────────────────────────────────────────
+
+model Seat {
+  id        Int      @id @default(autoincrement())
+  libraryId Int      @map("library_id")
+  /// What the owner calls the seat: "1", "12", "A3".
+  label     String
+  /// Display order; lets labels be free text.
+  position  Int
+  hasLocker Boolean  @default(false) @map("has_locker")
+  /// Removed seats are archived, not deleted, so past memberships keep their seat.
+  archivedAt DateTime? @map("archived_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  library     Library      @relation(fields: [libraryId], references: [id])
+  memberships Membership[]
+
+  @@unique([libraryId, label])
+  @@index([libraryId, position])
+  @@map("seats")
+}
+
+model Student {
+  id         Int       @id @default(autoincrement())
+  libraryId  Int       @map("library_id")
   name       String
+  /// E.164, e.g. +919876543210. Used for SMS / WhatsApp notices.
   phone      String
-  isActive   Boolean  @default(true)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  /// Set when the owner removes the student.
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  library     Library       @relation(fields: [library_id], references: [id])
-  memberships Memberships[]
+  library     Library      @relation(fields: [libraryId], references: [id])
+  memberships Membership[]
+  payments    Payment[]
+
+  @@index([libraryId, archivedAt])
+  @@index([libraryId, phone])
+  @@map("students")
 }
 
-model Memberships {
-  id Int @id @default(autoincrement())
+// ─── Memberships and money ──────────────────────────────────────────────────
 
-  start_hour       Int
-  start_minute     Int
-  end_hour         Int
-  end_minute       Int
-  crosses_midnight Boolean @default(false)
+/// One paid period on one seat for one daily time slot.
+/// A renewal creates a new row linked through previousId, so history is never overwritten.
+model Membership {
+  id         Int              @id @default(autoincrement())
+  libraryId  Int              @map("library_id")
+  studentId  Int              @map("student_id")
+  seatId     Int              @map("seat_id")
+  previousId Int?             @unique @map("previous_id")
 
-  start_date  DateTime
-  end_date    DateTime
-  status      String
-  total_fee   Decimal
-  paid_amount Decimal  @default(0)
-  student_id  Int
-  seat_id     Int
-  library_id  Int
+  /// Inclusive calendar dates in the library's timezone.
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
 
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  /// Daily slot as minutes from midnight. endMinute <= startMinute means the slot
+  /// crosses midnight (e.g. 22:00-02:00 is 1320-120).
+  startMinute Int @map("start_minute")
+  endMinute   Int @map("end_minute")
 
-  student          Students          @relation(fields: [student_id], references: [id], onDelete: Cascade)
-  seat             Seats             @relation(fields: [seat_id], references: [id])
-  library          Library           @relation(fields: [library_id], references: [id])
-  payments         Payments[]
+  fee        Decimal @db.Decimal(10, 2)
+  /// Sum of non-voided payments for this period, kept in sync inside payment transactions.
+  amountPaid Decimal @default(0) @map("amount_paid") @db.Decimal(10, 2)
+
+  status        MembershipStatus @default(ACTIVE)
+  /// Last day the seat stays reserved while OVERDUE.
+  graceEndsOn   DateTime?        @map("grace_ends_on") @db.Date
+  cancelledAt   DateTime?        @map("cancelled_at")
+  cancelReason  CancelReason?    @map("cancel_reason")
+
+  createdById Int?     @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  library          Library           @relation(fields: [libraryId], references: [id])
+  student          Student           @relation(fields: [studentId], references: [id])
+  seat             Seat              @relation(fields: [seatId], references: [id])
+  previous         Membership?       @relation("Renewal", fields: [previousId], references: [id])
+  next             Membership?       @relation("Renewal")
+  payments         Payment[]
   notificationLogs NotificationLog[]
 
-  @@index([seat_id, status])
-  @@index([library_id])
+  // Seat availability: memberships on a seat overlapping a date range.
+  @@index([seatId, status, startDate, endDate])
+  // Daily job and lists: memberships of a branch by status and end date.
+  @@index([libraryId, status, endDate])
+  @@index([studentId])
+  @@map("memberships")
 }
 
-model Expenses {
+model Payment {
+  id            Int         @id @default(autoincrement())
+  libraryId     Int         @map("library_id")
+  membershipId  Int         @map("membership_id")
+  studentId     Int         @map("student_id")
+  amount        Decimal     @db.Decimal(10, 2)
+  mode          PaymentMode
+  paidAt        DateTime    @default(now()) @map("paid_at")
+  /// Sequential per library, e.g. "RCP-000042".
+  receiptNumber String      @map("receipt_number")
+  notes         String?
+  recordedById  Int?        @map("recorded_by_id")
+  /// A payment entered by mistake is voided, never deleted, so receipts stay traceable.
+  voidedAt      DateTime?   @map("voided_at")
+  voidReason    String?     @map("void_reason")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  library    Library    @relation(fields: [libraryId], references: [id])
+  membership Membership @relation(fields: [membershipId], references: [id])
+  student    Student    @relation(fields: [studentId], references: [id])
+
+  @@unique([libraryId, receiptNumber])
+  @@index([libraryId, paidAt])
+  @@index([membershipId])
+  @@map("payments")
+}
+
+model Expense {
   id           Int      @id @default(autoincrement())
-  library_id   Int
+  libraryId    Int      @map("library_id")
   title        String
+  /// Free text chosen by the owner (Rent, Electricity, Salary...).
   category     String
-  amount       Decimal
-  expense_date DateTime
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  amount       Decimal  @db.Decimal(10, 2)
+  spentOn      DateTime @map("spent_on") @db.Date
+  notes        String?
+  recordedById Int?     @map("recorded_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  library Library @relation(fields: [library_id], references: [id])
+  library Library @relation(fields: [libraryId], references: [id])
 
-  @@index([library_id, expense_date])
+  @@index([libraryId, spentOn])
+  @@map("expenses")
 }
 
-model Payments {
-  id             Int      @id @default(autoincrement())
-  library_id     Int
-  membership_id  Int?
-  amount         Decimal
-  payment_date   DateTime
-  payment_mode   String
-  reference      String?
-  receipt_number String   @unique // e.g. "RCP-2025-00042"
-  notes          String?
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
+// ─── Notifications and jobs ─────────────────────────────────────────────────
 
-  library    Library      @relation(fields: [library_id], references: [id])
-  membership Memberships? @relation(fields: [membership_id], references: [id])
+/// One device per row, so every phone an owner or staff member uses gets pushes.
+model DeviceToken {
+  id         Int            @id @default(autoincrement())
+  userId     Int            @map("user_id")
+  token      String         @unique
+  platform   DevicePlatform
+  lastSeenAt DateTime       @default(now()) @map("last_seen_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
 }
 
+/// Every notice sent (or attempted). The unique key makes the daily job safe to re-run:
+/// the same notice for the same membership, channel and date is never sent twice.
 model NotificationLog {
-  id                Int      @id @default(autoincrement())
-  library_id        Int
-  membership_id     Int
-  sent_at           DateTime @default(now())
-  notification_type String
+  id            Int                 @id @default(autoincrement())
+  libraryId     Int                 @map("library_id")
+  membershipId  Int?                @map("membership_id")
+  type          NotificationType
+  channel       NotificationChannel
+  recipient     String
+  /// The date the notice is about (e.g. the membership end date), in library time.
+  referenceDate DateTime            @map("reference_date") @db.Date
+  status        NotificationStatus
+  error         String?
+  createdAt     DateTime            @default(now()) @map("created_at")
 
-  library    Library     @relation(fields: [library_id], references: [id])
-  membership Memberships @relation(fields: [membership_id], references: [id])
+  library    Library     @relation(fields: [libraryId], references: [id])
+  membership Membership? @relation(fields: [membershipId], references: [id])
 
-  @@unique([membership_id, notification_type, sent_at])
-  @@index([library_id, sent_at])
+  @@unique([membershipId, type, channel, recipient, referenceDate])
+  @@index([libraryId, createdAt])
+  @@map("notification_logs")
+}
+
+/// One row per job per day, so a missed or failed run is visible and can be re-run.
+model JobRun {
+  id         Int          @id @default(autoincrement())
+  name       String
+  runDate    DateTime     @map("run_date") @db.Date
+  status     JobRunStatus
+  stats      Json?
+  error      String?
+  startedAt  DateTime     @default(now()) @map("started_at")
+  finishedAt DateTime?    @map("finished_at")
+
+  @@unique([name, runDate])
+  @@map("job_runs")
 }

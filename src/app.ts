@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import express from "express";
+import express, { Router } from "express";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import { env } from "./config/env";
@@ -8,14 +8,16 @@ import { prisma } from "./lib/prisma";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { generalLimiter } from "./middleware/rateLimiters";
 import { simulateLatency } from "./middleware/simulateLatency";
-import libraryOwnerRoutes from "./modules/auth/routes";
+import authRoutes from "./modules/auth/routes";
 import dashboardRoutes from "./modules/dashboard/routes";
 import expenseRoutes from "./modules/expenses/routes";
-import libraryRoutes from "./modules/library/routes";
-import notificationRoutes from "./modules/notification/routes";
+import { libraryAccess, librariesRouter, libraryRouter } from "./modules/libraries/routes";
+import meRoutes from "./modules/me/routes";
+import { membershipPaymentsRouter, paymentsRouter } from "./modules/payments/routes";
 import seatRoutes from "./modules/seats/routes";
-import studentRoutes from "./modules/student/routes";
-import profileRoutes from "./modules/userProfile/route";
+import staffRoutes from "./modules/staff/routes";
+import studentRoutes from "./modules/students/routes";
+import { authMiddleware } from "./middleware/auth";
 
 export function createApp() {
   const app = express();
@@ -54,17 +56,37 @@ export function createApp() {
 
   app.use(generalLimiter);
 
-  app.use("/owners", libraryOwnerRoutes);
-  app.use("/libraries", libraryRoutes);
-  app.use("/libraries", studentRoutes);
-  app.use("/seats", seatRoutes);
-  app.use("/libraries", expenseRoutes);
-  app.use("/libraries", dashboardRoutes);
-  app.use("/profile", profileRoutes);
-  app.use("/notification", notificationRoutes);
+  app.use("/v1", apiV1());
 
   app.use(notFoundHandler);
   app.use(errorHandler);
 
   return app;
+}
+
+/**
+ * Version 1 of the API. Installed apps keep calling /v1 after a breaking change
+ * ships as /v2 (REVIEW API3).
+ */
+function apiV1() {
+  const v1 = Router();
+
+  v1.use("/auth", authRoutes);
+  v1.use("/me", meRoutes);
+  v1.use("/libraries", authMiddleware, librariesRouter);
+
+  // Everything inside one branch goes through the access check first (REVIEW S1).
+  const branch = Router({ mergeParams: true });
+  branch.use(authMiddleware, libraryAccess);
+  branch.use("/", libraryRouter);
+  branch.use("/dashboard", dashboardRoutes);
+  branch.use("/seats", seatRoutes);
+  branch.use("/students", studentRoutes);
+  branch.use("/memberships", membershipPaymentsRouter);
+  branch.use("/payments", paymentsRouter);
+  branch.use("/expenses", expenseRoutes);
+  branch.use("/staff", staffRoutes);
+  v1.use("/libraries/:libraryId", branch);
+
+  return v1;
 }

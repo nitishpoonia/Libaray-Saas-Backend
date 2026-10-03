@@ -1,99 +1,35 @@
-import { env } from "../../config/env";
-import { prisma } from "../../lib/prisma";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
-import { Request, Response } from "express";
-import { validateIdentifier } from "../../helpers/basicHelper";
+import type { Request, Response } from "express";
+import { sendData } from "../../lib/http";
+import { requireUser } from "../../middleware/libraryAccess";
+import { loginBody, logoutBody, refreshBody, signupBody } from "./schemas";
+import * as auth from "./service";
 
-
-interface SignupBody {
-  name: string;
-  identifier: string;
-  password: string;
+export async function signup(req: Request, res: Response) {
+  const input = signupBody.parse(req.body);
+  const { userId, tokens } = await auth.signup(input);
+  sendData(res, { userId, ...tokens }, undefined, 201);
 }
-export const createLibraryOwner = async (
-  req: Request<{}, {}, SignupBody>,
-  res: Response,
-) => {
-  try {
-    const body = req.body ?? {};
 
-    const { name, identifier, password } = body as SignupBody;
+export async function login(req: Request, res: Response) {
+  const input = loginBody.parse(req.body);
+  const { userId, tokens } = await auth.login(input);
+  sendData(res, { userId, ...tokens });
+}
 
-    if (!name || name.length < 2) {
-      return res.status(400).json({ error: "Name is required (min 2 chars)" });
-    }
+export async function refresh(req: Request, res: Response) {
+  const { refreshToken } = refreshBody.parse(req.body);
+  sendData(res, await auth.refresh(refreshToken));
+}
 
-    let user;
-    const kind = validateIdentifier(identifier);
+export async function logout(req: Request, res: Response) {
+  const user = requireUser(req);
+  const { deviceToken } = logoutBody.parse(req.body ?? {});
+  await auth.logout(user.id, user.sessionId, deviceToken);
+  res.status(204).end();
+}
 
-    if (kind === "email") {
-      user = await prisma.libraryOwner.findUnique({
-        where: { email: identifier },
-      });
-    } else {
-      user = await prisma.libraryOwner.findUnique({
-        where: { phone: `+91${identifier}` },
-      });
-    }
-    if (!kind) {
-      return res.status(400).json({ error: "Invalid email or phone format" });
-    }
-    if (!password || password.length < 8) {
-      return res
-        .status(400)
-        .json({ error: "Password must be at least 8 characters" });
-    }
-
-    if (user) {
-      return res
-        .status(409)
-        .json({ error: "Email or phone already registered" });
-    }
-
-    const password_hash = await bcrypt.hash(password, 10);
-
-    const owner = await prisma.libraryOwner.create({
-      data: {
-        name,
-        email: kind === "email" ? identifier : null,
-        phone: kind === "phone" ? `+91${identifier}` : null,
-        password_hash,
-        joined_date: new Date(),
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        joined_date: true,
-        created_at: true,
-      },
-    });
-
-    const token = jwt.sign(
-      {
-        id: owner.id,
-      },
-      env.JWT_SECRET,
-      { expiresIn: "7d" },
-    );
-
-    // 5. Send JSON response
-    return res.status(201).json({
-      message: "Signup successful",
-      token,
-      userId: owner.id,
-      isLibraryCreated: false,
-      owner,
-    });
-  } catch (error: any) {
-    if (error.code === "P2002") {
-      return res
-        .status(409)
-        .json({ error: "Email or phone already registered" });
-    }
-    console.error("Signup error:", error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-};
+export async function logoutAll(req: Request, res: Response) {
+  const user = requireUser(req);
+  await auth.logoutEverywhere(user.id);
+  res.status(204).end();
+}
